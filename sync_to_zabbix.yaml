@@ -17,14 +17,14 @@
       switch: "Network Devices"
       router: "Network Devices"
 
-  tasks:
-    - name: Get all devices from NetBox
-      community.netbox.netbox_device_module:
-        netbox_url: "{{ netbox_url }}"
-        netbox_token: "{{ netbox_token }}"
-        filter:
-          status: active
-        api_version: "2.10"
+ tasks:
+    - name: Get active devices from NetBox
+      netbox.netbox.nb_lookup:
+        api_endpoint: "dcim/devices"
+        api_filter:
+          status: "active"
+        api_token: "{{ netbox_token }}"
+        validate_certs: false
       register: netbox_devices
       no_log: true
 
@@ -34,22 +34,15 @@
         login_user: "{{ zabbix_user }}"
         login_password: "{{ zabbix_password }}"
         host_name: "{{ item.name }}"
-        host_groups: 
+        host_groups:
           - name: "{{ device_role_mapping[item.device_role.slug] | default('Other Devices') }}"
-        link_templates: "{{ zabbix_default_templates }}"
         interfaces:
-          - type: 1  # Agent interface
+          - type: 1
             main: 1
             useip: 1
-            ip: "{{ (item.primary_ip4.address | default('')).split('/')[0] }}"
-            dns: ""
+            ip: "{{ (item.primary_ip.address | default('')).split('/')[0] }}"
             port: "10050"
-        tags:
-          - tag: "source"
-            value: "netbox"
-          - tag: "site"
-            value: "{{ item.site.slug }}"
         state: present
-      loop: "{{ netbox_devices.devices }}"
-      when: item.primary_ip4 is defined
+      loop: "{{ netbox_devices.json }}"
+      when: item.primary_ip is defined
       no_log: true
