@@ -1,7 +1,11 @@
 ---
-- name: Sync NetBox Devices to Zabbix
+- name: Sync NetBox to Zabbix
   hosts: localhost
   gather_facts: false
+  collections:
+    - netbox.netbox
+    - community.zabbix
+    
   vars:
     netbox_url: "https://netbox.timberlinkaustralia.com.au/"
     zabbix_url: "https://itmonitor.timberlinkaustralia.com.au/zabbix/api_jsonrpc.php"
