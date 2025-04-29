@@ -1,0 +1,5 @@
+collections:
+  - name: netbox.netbox
+    version: 3.8.0
+  - name: community.zabbix
+    version: 1.8.0
