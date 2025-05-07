@@ -1,5 +1,8 @@
 collections:
-  - name: netbox.netbox
-    version: 3.8.0
-  - name: community.zabbix
-    version: 1.8.0
+- name: ansible.network
+- name: community.network
+- name: community.general
+- name: community.zabbix
+- name: community.vmware
+- name: netbox.netbox
+- name: zabbix.zabbix
