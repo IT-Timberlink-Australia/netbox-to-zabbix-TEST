@@ -1,0 +1,15 @@
+---
+plugin: netbox.netbox.nb_inventory
+api_endpoint: "https://netbox.timberlinkaustralia.com.au"
+token: "c5205e076369adca52934d59fe4b92923174f627"
+validate_certs: false
+config_context: false
+group_by:
+  - device_roles
+  - sites
+  - manufacturers
+query_filters:
+  - status: active
+  - tag: zabbix
+compose:
+  zabbix_proxy: "netbox_data.custom_fields.zabbix_proxy"

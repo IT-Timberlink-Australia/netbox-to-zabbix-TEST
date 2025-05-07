@@ -1,0 +1,120 @@
+# netbox_to_zabbix.yml
+---
+- name: Add NetBox devices to Zabbix
+  hosts: localhost
+  gather_facts: false
+  vars:
+    netbox_url: "https://netbox.timberlinkaustralia.com.au"
+    netbox_token: "c5205e076369adca52934d59fe4b92923174f627"
+    zabbix_url: "https://itmonitor.timberlinkaustralia.com.au/api_jsonrpc.php"
+    zabbix_user: "zb-to-nb"
+    zabbix_password: "Password@123"
+    #zabbix_default_proxy: "Zabbix proxy"
+
+  tasks:
+    - name: Get devices from NetBox
+      uri:
+        url: "{{ netbox_url }}/api/dcim/devices/?limit=0"
+        method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+          Accept: "application/json"
+        return_content: yes
+      register: netbox_devices
+      until: netbox_devices.status == 200
+      retries: 3
+      delay: 5
+
+    - name: Debug netbox devices
+      debug:
+        var: netbox_devices.json.results
+
+    - name: Create Zabbix API auth token
+      uri:
+        url: "{{ zabbix_url }}"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body: |
+          {
+            "jsonrpc": "2.0",
+            "method": "user.login",
+            "params": {
+              "user": "{{ zabbix_user }}",
+              "password": "{{ zabbix_password }}"
+            },
+            "id": 1
+          }
+      register: zabbix_auth
+      until: zabbix_auth.status == 200
+      retries: 3
+      delay: 5
+
+    - name: Set auth token fact
+      set_fact:
+        zabbix_token: "{{ zabbix_auth.json.result }}"
+
+    - name: Create hosts in Zabbix
+      uri:
+        url: "{{ zabbix_url }}"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body: |
+          {
+            "jsonrpc": "2.0",
+            "method": "host.create",
+            "params": {
+              "host": "{{ item.name }}",
+              "interfaces": [
+                {
+                  "type": 1,
+                  "main": 1,
+                  "useip": 1,
+                  "ip": "{{ item.primary_ip4.address.split('/')[0] if item.primary_ip4 else '' }}",
+                  "dns": "",
+                  "port": "10050"
+                }
+              ],
+              "groups": [
+                {
+                  "groupid": "2"  # Replace with your desired group ID
+                }
+              ],
+              "templates": [
+                {
+                  "templateid": "10001"  # Replace with your template ID
+                }
+              ],
+              "proxy_hostid": "{{ zabbix_default_proxy }}"
+            },
+            "auth": "{{ zabbix_token }}",
+            "id": 1
+          }
+      loop: "{{ netbox_devices.json.results }}"
+      when: item.primary_ip4 is defined
+      register: zabbix_host_creation
+      ignore_errors: yes
+
+    - name: Debug host creation results
+      debug:
+        var: zabbix_host_creation.results
+
+    - name: Logout from Zabbix API
+      uri:
+        url: "{{ zabbix_url }}"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body: |
+          {
+            "jsonrpc": "2.0",
+            "method": "user.logout",
+            "params": [],
+            "auth": "{{ zabbix_token }}",
+            "id": 1
+          }
+      when: zabbix_token is defined

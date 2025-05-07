@@ -1,2 +1,3 @@
 pynetbox
 pyzabbix
+zabbix-api
