@@ -21,7 +21,7 @@
           Accept: "application/json"
         return_content: yes
       register: netbox_devices
-      until: netbox_devices.status == 200
+      until: netbox_devices.status_code == 200
       retries: 3
       delay: 5
 
