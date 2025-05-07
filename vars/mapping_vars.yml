@@ -1,0 +1,15 @@
+vars:
+  role_to_template_mapping:
+    "router": 
+      templateid: "10001"  # Replace with your router template ID
+      groupid: "2"        # Replace with your network devices group ID
+    "switch":
+      templateid: "10002"  # Replace with your switch template ID
+      groupid: "3"        # Replace with your switching group ID
+    "server":
+      templateid: "10003"  # Replace with your server template ID
+      groupid: "4"        # Replace with your servers group ID
+    # Add more mappings as needed
+    "_default":
+      templateid: "10000"  # Default template
+      groupid: "1"         # Default group

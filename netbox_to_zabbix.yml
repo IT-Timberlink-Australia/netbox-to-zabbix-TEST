@@ -30,7 +30,7 @@
        that:
          - netbox_devices.status_code == 200
          - netbox_devices.json.results is defined
-      fail_msg: "Failed to get devices from NetBox or invalid response format"
+       fail_msg: "Failed to get devices from NetBox or invalid response format"
 
     - name: Debug netbox devices
       debug:
