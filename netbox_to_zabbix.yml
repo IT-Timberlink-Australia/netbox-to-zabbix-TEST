@@ -10,6 +10,16 @@
     zabbix_user: "zb-to-nb"
     zabbix_password: "Password@123"
     #zabbix_default_proxy: "Zabbix proxy"
+    
+    # Mapping of NetBox device roles to Zabbix templates
+    role_to_template_mapping:
+      "network-switch-edge-sw": 
+        templateid: "952c106526d54ae281279f081f0cdf0f"
+    
+    # Mapping of NetBox site names/slugs to existing Zabbix host group IDs
+    site_to_group_mapping:
+      "tarpeena": "23"      # Zabbix group ID for New York site
+      "_default": "1"       # Default Zabbix group ID
 
   tasks:
     - name: Get devices from NetBox
@@ -20,21 +30,17 @@
           Authorization: "Token {{ netbox_token }}"
           Accept: "application/json"
         return_content: yes
-        status_code: 200  # Explicitly expect 200 status code
+        status_code: 200
       register: netbox_devices
       retries: 3
       delay: 5
 
     - name: Verify NetBox API response
       assert:
-       that:
-         - netbox_devices.status_code == 200
-         - netbox_devices.json.results is defined
-       fail_msg: "Failed to get devices from NetBox or invalid response format"
-
-    - name: Debug netbox devices
-      debug:
-        var: netbox_devices.json.results
+        that:
+          - netbox_devices.status_code == 200
+          - netbox_devices.json.results is defined
+        fail_msg: "Failed to get devices from NetBox or invalid response format"
 
     - name: Create Zabbix API auth token
       uri:
@@ -54,7 +60,7 @@
             "id": 1
           }
       register: zabbix_auth
-      until: zabbix_auth.status == 200
+      until: zabbix_auth.status_code == 200
       retries: 3
       delay: 5
 
@@ -62,7 +68,7 @@
       set_fact:
         zabbix_token: "{{ zabbix_auth.json.result }}"
 
-    - name: Create hosts in Zabbix
+    - name: Create hosts in Zabbix with site-to-group mapping
       uri:
         url: "{{ zabbix_url }}"
         method: POST
@@ -87,12 +93,12 @@
               ],
               "groups": [
                 {
-                  "groupid": "2"  # Replace with your desired group ID
+                  "groupid": "{{ site_to_group_mapping[item.site.slug] | default(site_to_group_mapping['_default']) }}"
                 }
               ],
               "templates": [
                 {
-                  "templateid": "10001"  # Replace with your template ID
+                  "templateid": "{{ role_to_template_mapping[item.device_role.slug].templateid | default(role_to_template_mapping['_default'].templateid) }}"
                 }
               ],
               "proxy_hostid": "{{ zabbix_default_proxy }}"
@@ -125,3 +131,5 @@
             "id": 1
           }
       when: zabbix_token is defined
+
+  
