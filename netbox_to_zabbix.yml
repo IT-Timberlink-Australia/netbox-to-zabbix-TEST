@@ -1,16 +1,8 @@
-# netbox_to_zabbix.yml
 ---
-- name: Add NetBox devices to Zabbix
-  hosts: localhost
+- name: Sync NetBox Aruba devices to Zabbix
+  hosts: "all:!localhost"  # Targets all hosts EXCEPT localhost
   gather_facts: false
   vars:
-    netbox_url: "https://netbox.timberlinkaustralia.com.au"
-    netbox_token: "c5205e076369adca52934d59fe4b92923174f627"
-    zabbix_url: "https://itmonitor.timberlinkaustralia.com.au/api_jsonrpc.php"
-    zabbix_user: "zb-to-nb"
-    zabbix_password: "Password@123"
-    #zabbix_default_proxy: "Zabbix proxy"
-    
     # Mapping of NetBox device roles to Zabbix templates
     role_to_template_mapping:
       "network-switch-edge-sw": 
@@ -20,8 +12,24 @@
     site_to_group_mapping:
       "tarpeena": "23"      # Zabbix group ID for New York site
       "_default": "1"       # Default Zabbix group ID
-
+    zabbix_default_proxy: "SVRNMZB01"
   tasks:
+    - name: Authenticate to Zabbix API
+      uri:
+        url: "{{ zabbix_api }}"
+        method: POST
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: "user.login"
+          params:
+            user: "{{ zabbix_user }}"
+            password: "{{ zabbix_pword }}"
+          id: 1
+      register: zabbix_auth
+      delegate_to: localhost
+      run_once: true
+
     - name: Get devices from NetBox
       uri:
         url: "{{ netbox_url }}/api/dcim/devices/?limit=0"
@@ -44,7 +52,7 @@
 
     - name: Create Zabbix API auth token
       uri:
-        url: "{{ zabbix_url }}"
+        url: "{{ zabbix_api }}"
         method: POST
         headers:
           Content-Type: "application/json"
@@ -55,7 +63,7 @@
             "method": "user.login",
             "params": {
               "user": "{{ zabbix_user }}",
-              "password": "{{ zabbix_password }}"
+              "password": "{{ zabbix_pword }}"
             },
             "id": 1
           }
@@ -70,7 +78,7 @@
 
     - name: Create hosts in Zabbix with site-to-group mapping
       uri:
-        url: "{{ zabbix_url }}"
+        url: "{{ zabbix_api }}"
         method: POST
         headers:
           Content-Type: "application/json"
