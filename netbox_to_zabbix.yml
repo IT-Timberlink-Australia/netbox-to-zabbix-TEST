@@ -18,7 +18,7 @@
   tasks:
     - name: Authenticate to Zabbix API
       uri:
-        url: "{{ zabbix_api }}"
+        url: '{{ ZABBIX_API }}'
         method: POST
         body_format: json
         body: |
@@ -26,8 +26,8 @@
             "jsonrpc": "2.0",
             "method": "user.login",
             "params": {
-              "user": "{{ zabbix_user }}",
-              "password": "{{ zabbix_pword }}"
+              "user": '{{ ZABBIX_USER }}',
+              "password": '{{ ZABBIX_PWORD }}'
             },
             "id": 1
           }
@@ -46,9 +46,9 @@
 
     - name: Get NetBox devices
       uri:
-        url: "{{ netbox_url }}/api/dcim/devices/?limit=0"
+        url: "{{ NETBOX_API }}/api/dcim/devices/?limit=0"
         headers:
-          Authorization: "Token {{ netbox_token }}"
+          Authorization: "Token {{ NETBOX_TOKEN }}"
         method: GET
         status_code: 200
       register: netbox_devices
@@ -57,7 +57,7 @@
 
     - name: Create hosts in Zabbix
       uri:
-        url: "{{ zabbix_api }}"
+        url: '{{ ZABBIX_API }}'
         method: POST
         headers:
           Content-Type: "application/json"
@@ -102,7 +102,7 @@
 
     - name: Logout from Zabbix API
       uri:
-        url: "{{ zabbix_api }}"
+        url: '{{ ZABBIX_API }}'
         method: POST
         body:
           jsonrpc: "2.0"
