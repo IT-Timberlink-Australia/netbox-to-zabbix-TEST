@@ -1,61 +1,25 @@
 ---
 - name: Sync NetBox Aruba devices to Zabbix
-  hosts: "all:!localhost"  # Targets all hosts EXCEPT localhost
+  hosts: localhost  # Changed from "all:!localhost" since we're using API
   gather_facts: false
   vars:
-    # Mapping of NetBox device roles to Zabbix templates
     role_to_template_mapping:
       "network-switch-edge-sw": 
         templateid: "952c106526d54ae281279f081f0cdf0f"
+      "_default":
+        templateid: "your_default_template_id"
     
-    # Mapping of NetBox site names/slugs to existing Zabbix host group IDs
     site_to_group_mapping:
-      "tarpeena": "23"      # Zabbix group ID for New York site
-      "_default": "1"       # Default Zabbix group ID
+      "tarpeena": "23"
+      "_default": "1"
+    
     zabbix_default_proxy: "SVRNMZB01"
+
   tasks:
     - name: Authenticate to Zabbix API
       uri:
         url: "{{ zabbix_api }}"
         method: POST
-        body_format: json
-        body:
-          jsonrpc: "2.0"
-          method: "user.login"
-          params:
-            user: "{{ zabbix_user }}"
-            password: "{{ zabbix_pword }}"
-          id: 1
-      register: zabbix_auth
-      delegate_to: localhost
-      run_once: true
-
-    - name: Get devices from NetBox
-      uri:
-        url: "{{ netbox_url }}/api/dcim/devices/?limit=0"
-        method: GET
-        headers:
-          Authorization: "Token {{ netbox_token }}"
-          Accept: "application/json"
-        return_content: yes
-        status_code: 200
-      register: netbox_devices
-      retries: 3
-      delay: 5
-
-    - name: Verify NetBox API response
-      assert:
-        that:
-          - netbox_devices.status_code == 200
-          - netbox_devices.json.results is defined
-        fail_msg: "Failed to get devices from NetBox or invalid response format"
-
-    - name: Create Zabbix API auth token
-      uri:
-        url: "{{ zabbix_api }}"
-        method: POST
-        headers:
-          Content-Type: "application/json"
         body_format: json
         body: |
           {
@@ -76,7 +40,22 @@
       set_fact:
         zabbix_token: "{{ zabbix_auth.json.result }}"
 
-    - name: Create hosts in Zabbix with site-to-group mapping
+    - name: Get proxy hostid if proxy is defined
+      uri: # ... (proxy lookup task from above) ...
+      when: zabbix_default_proxy is defined
+
+    - name: Get NetBox devices
+      uri:
+        url: "{{ netbox_url }}/api/dcim/devices/?limit=0"
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+        method: GET
+        status_code: 200
+      register: netbox_devices
+      retries: 3
+      delay: 5
+
+    - name: Create hosts in Zabbix
       uri:
         url: "{{ zabbix_api }}"
         method: POST
@@ -89,27 +68,23 @@
             "method": "host.create",
             "params": {
               "host": "{{ item.name }}",
-              "interfaces": [
-                {
-                  "type": 1,
-                  "main": 1,
-                  "useip": 1,
-                  "ip": "{{ item.primary_ip4.address.split('/')[0] if item.primary_ip4 else '' }}",
-                  "dns": "",
-                  "port": "10050"
-                }
-              ],
-              "groups": [
-                {
-                  "groupid": "{{ site_to_group_mapping[item.site.slug] | default(site_to_group_mapping['_default']) }}"
-                }
-              ],
-              "templates": [
-                {
-                  "templateid": "{{ role_to_template_mapping[item.device_role.slug].templateid | default(role_to_template_mapping['_default'].templateid) }}"
-                }
-              ],
-              "proxy_hostid": "{{ zabbix_default_proxy }}"
+              "interfaces": [{
+                "type": 1,
+                "main": 1,
+                "useip": 1,
+                "ip": "{{ item.primary_ip4.address.split('/')[0] }}",
+                "dns": "",
+                "port": "10050"
+              }],
+              "groups": [{
+                "groupid": "{{ site_to_group_mapping[item.site.slug] | default(site_to_group_mapping['_default']) }}"
+              }],
+              "templates": [{
+                "templateid": "{{ role_to_template_mapping[item.device_role.slug].templateid | default(role_to_template_mapping['_default'].templateid) }}"
+              }],
+              {% if zabbix_proxy is defined and zabbix_proxy.json.result %}
+              "proxy_hostid": "{{ zabbix_proxy.json.result[0].proxyid }}"
+              {% endif %}
             },
             "auth": "{{ zabbix_token }}",
             "id": 1
@@ -119,25 +94,20 @@
       register: zabbix_host_creation
       ignore_errors: yes
 
-    - name: Debug host creation results
+    - name: Log failed creations
       debug:
-        var: zabbix_host_creation.results
+        msg: "Failed to create {{ item.item.name }}: {{ item.msg }}"
+      loop: "{{ zabbix_host_creation.results }}"
+      when: item.failed
 
     - name: Logout from Zabbix API
       uri:
-        url: "{{ zabbix_url }}"
+        url: "{{ zabbix_api }}"
         method: POST
-        headers:
-          Content-Type: "application/json"
-        body_format: json
-        body: |
-          {
-            "jsonrpc": "2.0",
-            "method": "user.logout",
-            "params": [],
-            "auth": "{{ zabbix_token }}",
-            "id": 1
-          }
+        body:
+          jsonrpc: "2.0"
+          method: "user.logout"
+          params: []
+          auth: "{{ zabbix_token }}"
+          id: 1
       when: zabbix_token is defined
-
-  
