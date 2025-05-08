@@ -11,15 +11,15 @@
     site_to_group_mapping:
       "tarpeena": "23"
       "_default": "1"
-    debug:
-    var: vars
+  debug:
+  var: vars
   when: false  # Set to true when you want to see the output
   zabbix_default_proxy: "SVRNMZB01"
 
   tasks:
     - name: Authenticate to Zabbix API
       uri:
-        url: '{{ ZABBIX_API }}'
+        url: '{{ zabbix_credential.ZABBIX_API }}'
         method: POST
         body_format: json
         body: |
@@ -27,8 +27,8 @@
             "jsonrpc": "2.0",
             "method": "user.login",
             "params": {
-              "user": '{{ ZABBIX_USER }}',
-              "password": '{{ ZABBIX_PWORD }}'
+              "user": '{{ zabbix_credential.ZABBIX_USER }}',
+              "password": '{{ zabbix_credential.ZABBIX_PWORD }}'
             },
             "id": 1
           }
