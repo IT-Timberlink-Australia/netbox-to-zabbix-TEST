@@ -2,19 +2,19 @@
 - name: Sync NetBox Aruba devices to Zabbix
   hosts: localhost  # Changed from "all:!localhost" since we're using API
   gather_facts: false
-  vars:
-    
+  vars:     
     role_to_template_mapping:
       "network-switch-edge-sw": 
         templateid: "952c106526d54ae281279f081f0cdf0f"
       "_default":
         templateid: "7e5eb5606bc4abba66c8b20381a1e8a"
-    
     site_to_group_mapping:
       "tarpeena": "23"
       "_default": "1"
-    
-    zabbix_default_proxy: "SVRNMZB01"
+    debug:
+    var: vars
+  when: false  # Set to true when you want to see the output
+  zabbix_default_proxy: "SVRNMZB01"
 
   tasks:
     - name: Authenticate to Zabbix API
@@ -41,8 +41,25 @@
       set_fact:
         zabbix_token: "{{ zabbix_auth.json.result }}"
 
-    - name: Get proxy hostid if proxy is defined
-      uri: # ... (proxy lookup task from above) ...
+    - name: Get proxy hostid
+      uri:
+        url: "{{ zabbix_api }}"
+        method: POST
+        headers:
+           Content-Type: "application/json"
+        body_format: json
+        body: |
+          {
+            "jsonrpc": "2.0",
+            "method": "proxy.get",
+            "params": {
+               "output": ["proxyid"],
+               "filter": {"host": "{{ zabbix_default_proxy }}"}
+           },
+           "auth": "{{ zabbix_token }}",
+           "id": 1
+          }
+      register: zabbix_proxy
       when: zabbix_default_proxy is defined
 
     - name: Get NetBox devices
