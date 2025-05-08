@@ -3,11 +3,12 @@
   hosts: localhost  # Changed from "all:!localhost" since we're using API
   gather_facts: false
   vars:
+    
     role_to_template_mapping:
       "network-switch-edge-sw": 
         templateid: "952c106526d54ae281279f081f0cdf0f"
       "_default":
-        templateid: "your_default_template_id"
+        templateid: "7e5eb5606bc4abba66c8b20381a1e8a"
     
     site_to_group_mapping:
       "tarpeena": "23"
@@ -46,7 +47,7 @@
 
     - name: Get NetBox devices
       uri:
-        url: "{{ NETBOX_API }}/api/dcim/devices/?limit=0"
+        url: "{{ NETBOX_API }}/api/dcim/devices/?limit=0&tag=zabbix"
         headers:
           Authorization: "Token {{ NETBOX_TOKEN }}"
         method: GET
