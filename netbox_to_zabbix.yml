@@ -9,8 +9,8 @@
     
     # Device Mapping Configuration
     role_to_template_mapping:
-      #"network-switch-edge-sw": 
-     #   templateid: "10748"
+      "network-switch-edge-sw": 
+        templateid: "10748"
       "_default":
         templateid: "10564"
     
@@ -24,11 +24,41 @@
       "23": "10761"    # Site ID 23 → Proxy ID 10761
       "_default": "10084"
 
+    # SNMP Templates
+    snmp_v2_templates: ["10748", "10445"]
+
   tasks:
     - name: Verify we have inventory data
       debug:
         msg: "Processing device {{ inventory_hostname }} with IP {{ ansible_host }}"
       run_once: true
+
+    - name: Get existing host from Zabbix
+      uri:
+        url: "{{ zabbix_api_url }}"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body: |
+          {
+            "jsonrpc": "2.0",
+            "method": "host.get",
+            "params": {
+              "output": ["hostid"],
+              "filter": {
+                "host": "{{ inventory_hostname }}"
+              }
+            },
+            "auth": "{{ zabbix_api_token }}",
+            "id": 1
+          }
+        status_code: 200
+        validate_certs: no
+      delegate_to: localhost
+      register: zabbix_host_check
+      retries: 3
+      delay: 5
 
     - name: Create/update host in Zabbix
       block:
@@ -40,7 +70,54 @@
               - device_roles[0] is defined
             fail_msg: "Missing required fields for {{ inventory_hostname }}"
 
-        - name: Submit to Zabbix API
+        - name: Determine template ID
+          set_fact:
+            template_id: "{{ role_to_template_mapping[device_roles[0]].templateid | default(role_to_template_mapping['_default'].templateid) }}"
+
+        - name: Set interface configuration
+          set_fact:
+            interface_config: |
+              {% if template_id in snmp_v2_templates %}
+              [{
+                "type": 2,
+                "main": 1,
+                "useip": 1,
+                "ip": "{{ ansible_host }}",
+                "dns": "",
+                "port": "161",
+                "details": {
+                  "version": 2,
+                  "community": "{$SNMP_COMMUNITY}"
+                }
+              }]
+              {% else %}
+              [{
+                "type": 3,  # IPMI interface type
+                "main": 1,
+                "useip": 1,
+                "ip": "{{ ansible_host }}",
+                "dns": "",
+                "port": "623"  # Default IPMI port
+                # No authentication details needed
+              }]
+              {% endif %}
+
+        - name: Set host parameters
+          set_fact:
+            host_params: |
+              {
+                "host": "{{ inventory_hostname }}",
+                "interfaces": {{ interface_config }},
+                "groups": [{
+                  "groupid": "{{ site_to_group_mapping[site_slug] | default(site_to_group_mapping['_default']) }}"
+                }],
+                "templates": [{
+                  "templateid": "{{ template_id }}"
+                }],
+                "proxy_hostid": "{{ site_to_proxy_mapping[site_id | string] | default(site_to_proxy_mapping['_default']) }}"
+              }
+
+        - name: Create new host in Zabbix
           uri:
             url: "{{ zabbix_api_url }}"
             method: POST
@@ -51,24 +128,7 @@
               {
                 "jsonrpc": "2.0",
                 "method": "host.create",
-                "params": {
-                  "host": "{{ inventory_hostname }}",
-                  "interfaces": [{
-                    "type": 1,
-                    "main": 1,
-                    "useip": 1,
-                    "ip": "{{ ansible_host }}",
-                    "dns": "",
-                    "port": "10050"
-                  }],
-                  "groups": [{
-                    "groupid": "{{ site_to_group_mapping[site_slug] | default(site_to_group_mapping['_default']) }}"
-                  }],
-                  "templates": [{
-                    "templateid": "{{ role_to_template_mapping[device_roles[0]].templateid | default(role_to_template_mapping['_default'].templateid) }}"
-                  }],
-                  "proxy_hostid": "{{ site_to_proxy_mapping[site_id | string] | default(site_to_proxy_mapping['_default']) }}"
-                },
+                "params": {{ host_params | to_json }},
                 "auth": "{{ zabbix_api_token }}",
                 "id": 1
               }
@@ -78,9 +138,36 @@
           register: host_creation
           retries: 3
           delay: 5
+          when: zabbix_host_check.json.result | length == 0
+
+        - name: Update existing host in Zabbix
+          uri:
+            url: "{{ zabbix_api_url }}"
+            method: POST
+            headers:
+              Content-Type: "application/json"
+            body_format: json
+            body: |
+              {
+                "jsonrpc": "2.0",
+                "method": "host.update",
+                "params": {
+                  "hostid": "{{ zabbix_host_check.json.result[0].hostid }}",
+                  {{ host_params | to_json | replace('{', '') | replace('}', '') }}
+                },
+                "auth": "{{ zabbix_api_token }}",
+                "id": 1
+              }
+            status_code: 200
+            validate_certs: no
+          delegate_to: localhost
+          register: host_update
+          retries: 3
+          delay: 5
+          when: zabbix_host_check.json.result | length > 0
       
       rescue:
-        - name: Log creation error
+        - name: Log creation/update error
           debug:
             msg: "Failed to process {{ inventory_hostname }}: {{ ansible_failed_result.msg }}"
 
@@ -88,6 +175,15 @@
       debug:
         msg: |
           Zabbix Sync Result for {{ inventory_hostname }}:
+          {% if zabbix_host_check.json.result | length > 0 %}
+          Action: Update
+          Status: {{ 'Success' if host_update is defined and not host_update.failed else 'Failed' }}
+          Response: {{ host_update.json | default('No response') }}
+          {% else %}
+          Action: Create
           Status: {{ 'Success' if host_creation is defined and not host_creation.failed else 'Failed' }}
           Response: {{ host_creation.json | default('No response') }}
-      when: host_creation is defined
+          {% endif %}
+          Interface Type: {{ 'SNMP v2' if template_id in snmp_v2_templates else 'IPMI' }}
+          Template ID: {{ template_id }}
+      when: (host_creation is defined or host_update is defined)
