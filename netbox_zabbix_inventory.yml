@@ -14,7 +14,7 @@ device_query_filters:
   - platform: 'aoscx'
 query_filters:
   - status: 'active'
-  - tag: zabbix
+  - tag: 'zabbix'
   - has_primary_ip: 'true'
 group_by:
   - sites
