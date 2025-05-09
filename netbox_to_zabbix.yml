@@ -15,13 +15,13 @@
         templateid: "10564"
     
     site_to_group_mapping:
-      "tarpeena": "23"
       "bell_bay": "22"
+      "tarpeena": "23"
       "_default": "5"
     
     site_to_proxy_mapping:
-      "bell_bay": "10633"    # Site ID 22 → Proxy ID 10633
-      "tarpeena": "10761"    # Site ID 23 → Proxy ID 10761
+      "1": "10633"    # Site ID 22 → Proxy ID 10633
+      "2": "10761"    # Site ID 23 → Proxy ID 10761
       "_default": "10084"
 
     # SNMP Templates
@@ -74,9 +74,14 @@
           set_fact:
             template_id: "{{ role_to_template_mapping[device_roles[0]].templateid | default(role_to_template_mapping['_default'].templateid) }}"
 
+        - name: Debug NetBox description
+          debug:
+            var: description
+          when: description is defined
+
         - name: Set visible name
           set_fact:
-            visible_name: "{{ inventory_hostname }} - {{ description | default('No description') }}"
+            visible_name: "{{ inventory_hostname }} - {{ description if description is defined and description | trim != '' else 'No description' }}"
 
         - name: Set interface configuration
           set_fact:
