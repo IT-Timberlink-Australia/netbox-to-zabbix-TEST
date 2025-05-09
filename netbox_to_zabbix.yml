@@ -20,8 +20,8 @@
       "_default": "5"
     
     site_to_proxy_mapping:
-      "bell_bay": "10633"    # Site bell_bay → Proxy ID 10633
-      "tarpeena": "10761"    # Site tarpeena → Proxy ID 10761
+      "22": "10633"
+      "23": "10761"
       "_default": "10084"
 
     # SNMP Templates
@@ -33,7 +33,7 @@
         msg: |
           Device: {{ inventory_hostname }}
           IP: {{ ansible_host }}
-          Description: "{{ hostvars[inventory_hostname].description | default('Not provided') }}"
+          Description: "{{ description | default('Not provided') }}"
           Site ID: {{ site_id }}
           Device Role: {{ device_roles[0] }}
       run_once: true
@@ -81,7 +81,7 @@
 
         - name: Set visible name
           set_fact:
-            visible_name: "{{ inventory_hostname }} - {{ hostvars[inventory_hostname].description | default('No description') }}"
+            visible_name: "{{ inventory_hostname }} - {{ description | default('No description') | trim }}"
 
         - name: Debug visible name
           debug:

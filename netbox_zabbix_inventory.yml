@@ -9,6 +9,7 @@ compose:
   site_slug: "site.slug"
   device_role_slug: "device_role.slug"
   tags: "tags"
+  description: "description"
 device_query_filters:
   - platform: 'aoscx_l2'
   - platform: 'aoscx'
