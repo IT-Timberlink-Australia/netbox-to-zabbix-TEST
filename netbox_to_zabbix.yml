@@ -19,9 +19,10 @@
       "bell_bay": "22"
       "_default": "5"
     
+    # Site ID to Proxy ID mapping - ensure these are strings to match NetBox's site_id
     site_to_proxy_mapping:
-      "22": "10633"
-      "23": "10761"
+      "22": "10633"    # Site ID 22 → Proxy ID 10633
+      "23": "10761"    # Site ID 23 → Proxy ID 10761
       "_default": "10084"
 
     # SNMP Templates
@@ -34,7 +35,8 @@
           Device: {{ inventory_hostname }}
           IP: {{ ansible_host }}
           Description: "{{ description | default('Not provided') }}"
-          Site ID: {{ site_id }}
+          Site ID: {{ site_id }} (Type: {{ site_id | type_debug }})
+          Site Slug: {{ site_slug }}
           Device Role: {{ device_roles[0] }}
       run_once: true
 
@@ -50,7 +52,7 @@
             "jsonrpc": "2.0",
             "method": "host.get",
             "params": {
-              "output": ["hostid", "name"],
+              "output": ["hostid", "name", "proxy_hostid"],
               "filter": {
                 "host": "{{ inventory_hostname }}"
               }
@@ -64,6 +66,14 @@
       register: zabbix_host_check
       retries: 3
       delay: 5
+
+    - name: Debug proxy mapping
+      debug:
+        msg: |
+          Site ID: {{ site_id }}
+          Site ID Type: {{ site_id | type_debug }}
+          Proxy ID: {{ site_to_proxy_mapping[site_id | string] | default(site_to_proxy_mapping['_default']) }}
+      when: site_id is defined
 
     - name: Create/update host in Zabbix
       block:
@@ -83,9 +93,9 @@
           set_fact:
             visible_name: "{{ inventory_hostname }} - {{ description | default('No description') | trim }}"
 
-        - name: Debug visible name
-          debug:
-            msg: "Final visible name will be: '{{ visible_name }}'"
+        - name: Determine proxy ID
+          set_fact:
+            proxy_id: "{{ site_to_proxy_mapping[site_id | string] | default(site_to_proxy_mapping['_default']) }}"
 
         - name: Set interface configuration
           set_fact:
@@ -135,7 +145,7 @@
                   "templates": [{
                     "templateid": "{{ template_id }}"
                   }],
-                  "proxy_hostid": "{{ site_to_proxy_mapping[site_id | string] | default(site_to_proxy_mapping['_default']) }}"
+                  "proxy_hostid": "{{ proxy_id }}"
                 },
                 "auth": "{{ zabbix_api_token }}",
                 "id": 1
@@ -169,7 +179,7 @@
                   "templates": [{
                     "templateid": "{{ template_id }}"
                   }],
-                  "proxy_hostid": "{{ site_to_proxy_mapping[site_id | string] | default(site_to_proxy_mapping['_default']) }}"
+                  "proxy_hostid": "{{ proxy_id }}"
                 },
                 "auth": "{{ zabbix_api_token }}",
                 "id": 1
@@ -203,4 +213,5 @@
           Visible Name: "{{ visible_name }}"
           Interface Type: {{ 'SNMP v2' if template_id in snmp_v2_templates else 'IPMI' }}
           Template ID: {{ template_id }}
+          Proxy ID: {{ proxy_id }}
       when: (host_creation is defined or host_update is defined)
