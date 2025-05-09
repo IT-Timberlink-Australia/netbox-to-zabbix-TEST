@@ -20,8 +20,8 @@
       "_default": "5"
     
     site_to_proxy_mapping:
-      "22": "10633"    # Site ID 22 → Proxy ID 10633
-      "23": "10761"    # Site ID 23 → Proxy ID 10761
+      "bel_bay": "10633"    # Site ID 22 → Proxy ID 10633
+      "tarpeena": "10761"    # Site ID 23 → Proxy ID 10761
       "_default": "10084"
 
     # SNMP Templates
@@ -45,7 +45,7 @@
             "jsonrpc": "2.0",
             "method": "host.get",
             "params": {
-              "output": ["hostid"],
+              "output": ["hostid", "name"],
               "filter": {
                 "host": "{{ inventory_hostname }}"
               }
@@ -74,6 +74,10 @@
           set_fact:
             template_id: "{{ role_to_template_mapping[device_roles[0]].templateid | default(role_to_template_mapping['_default'].templateid) }}"
 
+        - name: Set visible name
+          set_fact:
+            visible_name: "{{ inventory_hostname }} - {{ description | default('No description') }}"
+
         - name: Set interface configuration
           set_fact:
             interface_config: |
@@ -98,24 +102,8 @@
                 "ip": "{{ ansible_host }}",
                 "dns": "",
                 "port": "623"  # Default IPMI port
-                # No authentication details needed
               }]
               {% endif %}
-
-        - name: Set host parameters
-          set_fact:
-            host_params: |
-              {
-                "host": "{{ inventory_hostname }}",
-                "interfaces": {{ interface_config }},
-                "groups": [{
-                  "groupid": "{{ site_to_group_mapping[site_slug] | default(site_to_group_mapping['_default']) }}"
-                }],
-                "templates": [{
-                  "templateid": "{{ template_id }}"
-                }],
-                "proxy_hostid": "{{ site_to_proxy_mapping[site_id | string] | default(site_to_proxy_mapping['_default']) }}"
-              }
 
         - name: Create new host in Zabbix
           uri:
@@ -128,7 +116,18 @@
               {
                 "jsonrpc": "2.0",
                 "method": "host.create",
-                "params": {{ host_params | to_json }},
+                "params": {
+                  "host": "{{ inventory_hostname }}",
+                  "name": "{{ visible_name }}",
+                  "interfaces": {{ interface_config }},
+                  "groups": [{
+                    "groupid": "{{ site_to_group_mapping[site_slug] | default(site_to_group_mapping['_default']) }}"
+                  }],
+                  "templates": [{
+                    "templateid": "{{ template_id }}"
+                  }],
+                  "proxy_hostid": "{{ site_to_proxy_mapping[site_id | string] | default(site_to_proxy_mapping['_default']) }}"
+                },
                 "auth": "{{ zabbix_api_token }}",
                 "id": 1
               }
@@ -153,7 +152,15 @@
                 "method": "host.update",
                 "params": {
                   "hostid": "{{ zabbix_host_check.json.result[0].hostid }}",
-                  {{ host_params | to_json | replace('{', '') | replace('}', '') }}
+                  "name": "{{ visible_name }}",
+                  "interfaces": {{ interface_config }},
+                  "groups": [{
+                    "groupid": "{{ site_to_group_mapping[site_slug] | default(site_to_group_mapping['_default']) }}"
+                  }],
+                  "templates": [{
+                    "templateid": "{{ template_id }}"
+                  }],
+                  "proxy_hostid": "{{ site_to_proxy_mapping[site_id | string] | default(site_to_proxy_mapping['_default']) }}"
                 },
                 "auth": "{{ zabbix_api_token }}",
                 "id": 1
@@ -184,6 +191,7 @@
           Status: {{ 'Success' if host_creation is defined and not host_creation.failed else 'Failed' }}
           Response: {{ host_creation.json | default('No response') }}
           {% endif %}
+          Visible Name: "{{ visible_name }}"
           Interface Type: {{ 'SNMP v2' if template_id in snmp_v2_templates else 'IPMI' }}
           Template ID: {{ template_id }}
       when: (host_creation is defined or host_update is defined)
