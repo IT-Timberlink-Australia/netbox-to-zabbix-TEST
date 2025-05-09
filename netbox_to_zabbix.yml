@@ -10,9 +10,9 @@
     # Device Mapping Configuration
     role_to_template_mapping:
       "network-switch-edge-sw": 
-        templateid: "952c106526d54ae281279f081f0cdf0f"
+        templateid: "10748"
       "_default":
-        templateid: "7e5eb5606bc4abba66c8b20381a1e8a"
+        templateid: "10564"
     
     site_to_group_mapping:
       "tarpeena": "23"
