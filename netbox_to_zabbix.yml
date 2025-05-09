@@ -21,8 +21,8 @@
     
     # Site ID to Proxy ID mapping - ensure these are strings to match NetBox's site_id
     site_to_proxy_mapping:
-      "22": "10633"    # Site ID 22 → Proxy ID 10633
-      "23": "10761"    # Site ID 23 → Proxy ID 10761
+      "1": "10633"    # Site ID 22 → Proxy ID 10633
+      "2": "10761"    # Site ID 23 → Proxy ID 10761
       "_default": "10084"
 
     # SNMP Templates
