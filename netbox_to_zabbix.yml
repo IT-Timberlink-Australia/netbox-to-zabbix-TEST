@@ -16,7 +16,7 @@
   tasks:
     - name: Authenticate to Zabbix API
       uri:
-        url: '{{ zabbix_credential.ZABBIX_API }}'
+        url: "{{ lookup('env', 'ZABBIX_API') }}"
         method: POST
         body_format: json
         body: |
@@ -24,8 +24,8 @@
             "jsonrpc": "2.0",
             "method": "user.login",
             "params": {
-              "user": '{{ zabbix_credential.ZABBIX_USER }}',
-              "password": '{{ zabbix_credential.ZABBIX_PWORD }}'
+              "user": "{{ lookup('env', 'ZABBIX_USER') }}",
+              "password": "{{ lookup('env', 'ZABBIX_PWORD') }}"
             },
             "id": 1
           }
@@ -40,7 +40,7 @@
 
     - name: Get proxy hostid
       uri:
-        url: "{{ zabbix_api }}"
+        url: "{{ lookup('env', 'ZABBIX_API') }}"
         method: POST
         headers:
            Content-Type: "application/json"
