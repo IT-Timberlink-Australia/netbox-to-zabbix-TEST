@@ -20,28 +20,26 @@
       "_default": "5"
     
     site_to_proxy_mapping:
-      "22": "10633"    # Site ID 22 → Proxy ID 10633
-      "23": "10761"    # Site ID 23 → Proxy ID 10761
+      "2": "10633"    # Site ID 2 → Proxy ID 10633 (updated to match your site_id)
       "_default": "10084"
 
   tasks:
-    - name: Verify inventory data
+    - name: Verify we have inventory data
       debug:
-        msg: "Loaded {{ groups['all'] | length }} devices from inventory"
+        msg: "Processing device {{ inventory_hostname }} with IP {{ ansible_host }}"
       run_once: true
 
-    - name: Create/update hosts in Zabbix
+    - name: Create/update host in Zabbix
       block:
-        - name: Validate host data
+        - name: Validate required fields
           assert:
             that:
-              - hostvars[inventory_hostname].ansible_host is defined
-              - hostvars[inventory_hostname].site is defined
-              - hostvars[inventory_hostname].device_role is defined
-            fail_msg: "Missing required host variables for {{ inventory_hostname }}"
-          when: "'zabbix' in (hostvars[inventory_hostname].tags | default([]))"
+              - ansible_host is defined
+              - site_id is defined
+              - device_roles[0] is defined
+            fail_msg: "Missing required fields for {{ inventory_hostname }}"
 
-        - name: Create host in Zabbix
+        - name: Submit to Zabbix API
           uri:
             url: "{{ zabbix_api_url }}"
             method: POST
@@ -58,17 +56,17 @@
                     "type": 1,
                     "main": 1,
                     "useip": 1,
-                    "ip": "{{ hostvars[inventory_hostname].ansible_host }}",
+                    "ip": "{{ ansible_host }}",
                     "dns": "",
                     "port": "10050"
                   }],
                   "groups": [{
-                    "groupid": "{{ site_to_group_mapping[hostvars[inventory_hostname].site.slug] | default(site_to_group_mapping['_default']) }}"
+                    "groupid": "{{ site_to_group_mapping[site_slug] | default(site_to_group_mapping['_default']) }}"
                   }],
                   "templates": [{
-                    "templateid": "{{ role_to_template_mapping[hostvars[inventory_hostname].device_role.slug].templateid | default(role_to_template_mapping['_default'].templateid) }}"
+                    "templateid": "{{ role_to_template_mapping[device_roles[0]].templateid | default(role_to_template_mapping['_default'].templateid) }}"
                   }],
-                  "proxy_hostid": "{{ site_to_proxy_mapping[hostvars[inventory_hostname].site.id | string] | default(site_to_proxy_mapping['_default']) }}"
+                  "proxy_hostid": "{{ site_to_proxy_mapping[site_id | string] | default(site_to_proxy_mapping['_default']) }}"
                 },
                 "auth": "{{ zabbix_api_token }}",
                 "id": 1
@@ -79,18 +77,17 @@
           register: host_creation
           retries: 3
           delay: 5
-          when: "'zabbix' in (hostvars[inventory_hostname].tags | default([]))"
+          when: "'zabbix' in (tags | map(attribute='name') | list)"
+      
       rescue:
         - name: Log creation error
           debug:
             msg: "Failed to process {{ inventory_hostname }}: {{ ansible_failed_result.msg }}"
-          when: inventory_hostname is defined
 
-    - name: Show summary results
+    - name: Show sync result
       debug:
         msg: |
-          Zabbix Sync Summary:
-          Attempted devices: {{ host_creation.results | default([]) | length }}
-          Successful: {{ host_creation.results | selectattr('failed', 'equalto', false) | list | length }}
-          Failed: {{ host_creation.results | selectattr('failed') | list | length }}
-      run_once: true
+          Zabbix Sync Result for {{ inventory_hostname }}:
+          Status: {{ 'Success' if host_creation is defined and not host_creation.failed else 'Failed' }}
+          Response: {{ host_creation.json | default('No response') }}
+      when: host_creation is defined
