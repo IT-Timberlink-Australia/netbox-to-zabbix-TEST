@@ -16,9 +16,13 @@
     
     site_to_group_mapping:
       "tarpeena": "23"
-      "_default": "1"
+      "bell_bay": "22"
+      "_default": "5"
     
-    zabbix_default_proxy: "SVRNMZB01"
+    site_to_proxy_mapping:
+      "22": "10633"    # Site ID 22 → Proxy ID 10633
+      "23": "10761"    # Site ID 23 → Proxy ID 10761
+      "_default": "10084"  # Default proxy ID
 
   tasks:
     - name: Filter devices with 'zabbix' tag
@@ -32,30 +36,7 @@
           }}
       run_once: true
 
-    - name: Get Zabbix proxy ID (if proxy is configured)
-      uri:
-        url: "{{ zabbix_api_url }}"
-        method: POST
-        headers:
-          Content-Type: "application/json"
-        body_format: json
-        body: |
-          {
-            "jsonrpc": "2.0",
-            "method": "proxy.get",
-            "params": {
-              "output": ["proxyid"],
-              "filter": {"host": "{{ zabbix_default_proxy }}"}
-            },
-            "auth": "{{ zabbix_api_token }}",
-            "id": 1
-          }
-      register: zabbix_proxy
-      delegate_to: localhost
-      run_once: true
-      when: zabbix_default_proxy is defined
-
-    - name: Create/update hosts in Zabbix (only for devices with zabbix tag)
+    - name: Create/update hosts in Zabbix with dynamic proxy assignment
       uri:
         url: "{{ zabbix_api_url }}"
         method: POST
@@ -81,10 +62,8 @@
               }],
               "templates": [{
                 "templateid": "{{ role_to_template_mapping[hostvars[inventory_hostname].device_role.slug].templateid | default(role_to_template_mapping['_default'].templateid) }}"
-              }]
-              {% if zabbix_proxy is defined and zabbix_proxy.json.result %}
-              ,"proxy_hostid": "{{ zabbix_proxy.json.result[0].proxyid }}"
-              {% endif %}
+              }],
+              "proxy_hostid": "{{ site_to_proxy_mapping[hostvars[inventory_hostname].site.id | string] | default(site_to_proxy_mapping['_default']) }}"
             },
             "auth": "{{ zabbix_api_token }}",
             "id": 1
