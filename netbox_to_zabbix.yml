@@ -19,10 +19,9 @@
       "bell_bay": "22"
       "_default": "5"
     
-    # Site ID to Proxy ID mapping - ensure these are strings to match NetBox's site_id
     site_to_proxy_mapping:
-      "1": "10633"    # Site ID 22 → Proxy ID 10633
-      "2": "10761"    # Site ID 23 → Proxy ID 10761
+      "22": "10633"    # Site ID 22 → Proxy ID 10633
+      "23": "10761"    # Site ID 23 → Proxy ID 10761
       "_default": "10084"
 
     # SNMP Templates
@@ -67,14 +66,6 @@
       retries: 3
       delay: 5
 
-    - name: Debug proxy mapping
-      debug:
-        msg: |
-          Site ID: {{ site_id }}
-          Site ID Type: {{ site_id | type_debug }}
-          Proxy ID: {{ site_to_proxy_mapping[site_id | string] | default(site_to_proxy_mapping['_default']) }}
-      when: site_id is defined
-
     - name: Create/update host in Zabbix
       block:
         - name: Validate required fields
@@ -96,6 +87,14 @@
         - name: Determine proxy ID
           set_fact:
             proxy_id: "{{ site_to_proxy_mapping[site_id | string] | default(site_to_proxy_mapping['_default']) }}"
+
+        - name: Debug proxy assignment
+          debug:
+            msg: |
+              Proxy Assignment Details:
+              Site ID: {{ site_id }}
+              Mapped Proxy ID: {{ proxy_id }}
+              Proxy ID Type: {{ proxy_id | type_debug }}
 
         - name: Set interface configuration
           set_fact:
@@ -145,7 +144,9 @@
                   "templates": [{
                     "templateid": "{{ template_id }}"
                   }],
+                  {% if proxy_id != '' %}
                   "proxy_hostid": "{{ proxy_id }}"
+                  {% endif %}
                 },
                 "auth": "{{ zabbix_api_token }}",
                 "id": 1
@@ -179,7 +180,9 @@
                   "templates": [{
                     "templateid": "{{ template_id }}"
                   }],
+                  {% if proxy_id != '' %}
                   "proxy_hostid": "{{ proxy_id }}"
+                  {% endif %}
                 },
                 "auth": "{{ zabbix_api_token }}",
                 "id": 1
