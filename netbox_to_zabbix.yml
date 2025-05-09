@@ -1,82 +1,65 @@
 ---
 - name: Sync NetBox Aruba devices to Zabbix
-  hosts: localhost  # Changed from "all:!localhost" since we're using API
+  hosts: localhost
   gather_facts: false
-  vars:     
+  vars:
+
+    # API Configuration
+    zabbix_api_url: "{{ lookup('env', 'ZABBIX_API_URL') }}"
+    zabbix_api_token: "{{ lookup('env', 'ZABBIX_API_TOKEN') }}"
+    netbox_url: "{{ lookup('env', 'NETBOX_API') }}"
+    netbox_token: "{{ lookup('env', 'NETBOX_TOKEN') }}"
+
+    # Device Mapping Configuration
     role_to_template_mapping:
       "network-switch-edge-sw": 
         templateid: "952c106526d54ae281279f081f0cdf0f"
       "_default":
         templateid: "7e5eb5606bc4abba66c8b20381a1e8a"
+    
     site_to_group_mapping:
       "tarpeena": "23"
       "_default": "1"
+    
     zabbix_default_proxy: "SVRNMZB01"
 
   tasks:
-    - name: Authenticate to Zabbix API
+    - name: Get NetBox devices with 'zabbix' tag
       uri:
-        url: "{{ lookup('env', 'ZABBIX_API') }}"
-        method: POST
-        body_format: json
-        body:
-          jsonrpc: "2.0"
-          method: "user.login"
-          params:
-            user: "{{ lookup('env', 'ZABBIX_USER') }}"
-            password: "{{ lookup('env', 'ZABBIX_PWORD') }}"
-          id: 1
-        status_code: 200
+        url: "{{ netbox_url }}/dcim/devices/?tag=zabbix&platform__n=aoscx,aoscx_l2&status=active"
+        method: GET
+        headers:
+          Authorization: "Token {{ netbox_token }}"
         return_content: yes
-      register: zabbix_auth
+        status_code: 200
+      register: netbox_devices
       retries: 3
       delay: 5
-      until: zabbix_auth.status == 200
 
-    - name: Set auth token fact
-      set_fact:
-        zabbix_token: "{{ zabbix_auth.json.result }}"
-    
-    - name: Verify token
-      debug:
-        msg: "Successfully authenticated to Zabbix API"
-      when: zabbix_token is defined
-
-    - name: Get proxy hostid
+    - name: Get Zabbix proxy ID (if proxy is configured)
       uri:
-        url: "{{ lookup('env', 'ZABBIX_API') }}"
+        url: "{{ zabbix_api_url }}"
         method: POST
         headers:
-           Content-Type: "application/json"
+          Content-Type: "application/json"
         body_format: json
         body: |
           {
             "jsonrpc": "2.0",
             "method": "proxy.get",
             "params": {
-               "output": ["proxyid"],
-               "filter": {"host": "{{ zabbix_default_proxy }}"}
-           },
-           "auth": "{{ zabbix_token }}",
-           "id": 1
+              "output": ["proxyid"],
+              "filter": {"host": "{{ zabbix_default_proxy }}"}
+            },
+            "auth": "{{ zabbix_api_token }}",
+            "id": 1
           }
       register: zabbix_proxy
       when: zabbix_default_proxy is defined
 
-    - name: Get NetBox devices
+    - name: Create/update hosts in Zabbix
       uri:
-        url: "{{ NETBOX_API }}/api/dcim/devices/?limit=0&tag=zabbix"
-        headers:
-          Authorization: "Token {{ NETBOX_TOKEN }}"
-        method: GET
-        status_code: 200
-      register: netbox_devices
-      retries: 3
-      delay: 5
-
-    - name: Create hosts in Zabbix
-      uri:
-        url: "{{ lookup('env', 'ZABBIX_API') }}"
+        url: "{{ zabbix_api_url }}"
         method: POST
         headers:
           Content-Type: "application/json"
@@ -100,33 +83,23 @@
               }],
               "templates": [{
                 "templateid": "{{ role_to_template_mapping[item.device_role.slug].templateid | default(role_to_template_mapping['_default'].templateid) }}"
-              }],
+              }]
               {% if zabbix_proxy is defined and zabbix_proxy.json.result %}
-              "proxy_hostid": "{{ zabbix_proxy.json.result[0].proxyid }}"
+              ,"proxy_hostid": "{{ zabbix_proxy.json.result[0].proxyid }}"
               {% endif %}
             },
-            "auth": "{{ zabbix_token }}",
+            "auth": "{{ zabbix_api_token }}",
             "id": 1
           }
       loop: "{{ netbox_devices.json.results }}"
       when: item.primary_ip4 is defined
-      register: zabbix_host_creation
-      ignore_errors: yes
+      register: host_creation
+      retries: 3
+      delay: 5
 
-    - name: Log failed creations
+    - name: Show creation results
       debug:
-        msg: "Failed to create {{ item.item.name }}: {{ item.msg }}"
-      loop: "{{ zabbix_host_creation.results }}"
-      when: item.failed
-
-    - name: Logout from Zabbix API
-      uri:
-        url: "{{ lookup('env', 'ZABBIX_API') }}"
-        method: POST
-        body:
-          jsonrpc: "2.0"
-          method: "user.logout"
-          params: []
-          auth: "{{ zabbix_token }}"
-          id: 1
-      when: zabbix_token is defined
+        msg: |
+          Processed {{ host_creation.results | length }} devices
+          Success: {{ host_creation.results | selectattr('failed', 'equalto', false) | list | length }}
+          Failed: {{ host_creation.results | selectattr('failed') | list | length }}
