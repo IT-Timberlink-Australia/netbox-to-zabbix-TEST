@@ -11,10 +11,7 @@
     site_to_group_mapping:
       "tarpeena": "23"
       "_default": "1"
-  debug:
-  var: vars
-  when: false  # Set to true when you want to see the output
-  zabbix_default_proxy: "SVRNMZB01"
+    zabbix_default_proxy: "SVRNMZB01"
 
   tasks:
     - name: Authenticate to Zabbix API
