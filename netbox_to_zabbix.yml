@@ -20,8 +20,8 @@
       "_default": "5"
     
     site_to_proxy_mapping:
-      "1": "10632"    # Site ID 22 → Proxy ID 10633
-      "2": "10639"    # Site ID 23 → Proxy ID 10761
+      "1": "10632"    # Site ID 22 → Proxy ID 10632
+      "2": "10639"    # Site ID 23 → Proxy ID 10639
       "_default": "10084"
 
     # SNMP Templates
