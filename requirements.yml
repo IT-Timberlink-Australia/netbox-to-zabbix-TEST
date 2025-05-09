@@ -3,6 +3,5 @@ collections:
 - name: community.network
 - name: community.general
 - name: community.zabbix
-- name: community.vmware
 - name: netbox.netbox
 - name: zabbix.zabbix
