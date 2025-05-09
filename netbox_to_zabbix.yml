@@ -20,7 +20,7 @@
       "_default": "5"
     
     site_to_proxy_mapping:
-      "bel_bay": "10633"    # Site ID 22 → Proxy ID 10633
+      "bell_bay": "10633"    # Site ID 22 → Proxy ID 10633
       "tarpeena": "10761"    # Site ID 23 → Proxy ID 10761
       "_default": "10084"
 
