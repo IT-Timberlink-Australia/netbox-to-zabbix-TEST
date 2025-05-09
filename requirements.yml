@@ -1,7 +1,4 @@
 collections:
-- name: ansible.network
-- name: community.network
-- name: community.general
 - name: community.zabbix
 - name: netbox.netbox
 - name: zabbix.zabbix

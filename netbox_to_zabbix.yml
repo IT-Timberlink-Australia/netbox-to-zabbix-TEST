@@ -1,5 +1,5 @@
 ---
-- name: Sync NetBox Aruba devices to Zabbix
+- name: Sync NetBox devices to Zabbix
   hosts: all
   gather_facts: false
   vars:
@@ -9,8 +9,8 @@
     
     # Device Mapping Configuration
     role_to_template_mapping:
-      "network-switch-edge-sw": 
-        templateid: "10748"
+      #"network-switch-edge-sw": 
+     #   templateid: "10748"
       "_default":
         templateid: "10564"
     
