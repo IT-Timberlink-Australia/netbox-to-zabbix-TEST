@@ -19,24 +19,28 @@
         url: "{{ lookup('env', 'ZABBIX_API') }}"
         method: POST
         body_format: json
-        body: |
-          {
-            "jsonrpc": "2.0",
-            "method": "user.login",
-            "params": {
-              "user": "{{ lookup('env', 'ZABBIX_USER') }}",
-              "password": "{{ lookup('env', 'ZABBIX_PWORD') }}"
-            },
-            "id": 1
-          }
+        body:
+          jsonrpc: "2.0"
+          method: "user.login"
+          params:
+            user: "{{ lookup('env', 'ZABBIX_USER') }}"
+            password: "{{ lookup('env', 'ZABBIX_PWORD') }}"
+          id: 1
+        status_code: 200
+        return_content: yes
       register: zabbix_auth
-      until: zabbix_auth.status_code == 200
       retries: 3
       delay: 5
+      until: zabbix_auth.status == 200
 
     - name: Set auth token fact
       set_fact:
         zabbix_token: "{{ zabbix_auth.json.result }}"
+    
+    - name: Verify token
+      debug:
+        msg: "Successfully authenticated to Zabbix API"
+      when: zabbix_token is defined
 
     - name: Get proxy hostid
       uri:
