@@ -72,7 +72,7 @@
 
     - name: Create hosts in Zabbix
       uri:
-        url: '{{ ZABBIX_API }}'
+        url: "{{ lookup('env', 'ZABBIX_API') }}"
         method: POST
         headers:
           Content-Type: "application/json"
@@ -117,7 +117,7 @@
 
     - name: Logout from Zabbix API
       uri:
-        url: '{{ ZABBIX_API }}'
+        url: "{{ lookup('env', 'ZABBIX_API') }}"
         method: POST
         body:
           jsonrpc: "2.0"
