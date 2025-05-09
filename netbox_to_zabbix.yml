@@ -1,15 +1,12 @@
 ---
 - name: Sync NetBox Aruba devices to Zabbix
-  hosts: localhost
+  hosts: all  # Targets all hosts from the AWX inventory
   gather_facts: false
   vars:
-
     # API Configuration
     zabbix_api_url: "{{ lookup('env', 'ZABBIX_API_URL') }}"
     zabbix_api_token: "{{ lookup('env', 'ZABBIX_API_TOKEN') }}"
-    netbox_url: "{{ lookup('env', 'NETBOX_API') }}"
-    netbox_token: "{{ lookup('env', 'NETBOX_TOKEN') }}"
-
+    
     # Device Mapping Configuration
     role_to_template_mapping:
       "network-switch-edge-sw": 
@@ -24,17 +21,16 @@
     zabbix_default_proxy: "SVRNMZB01"
 
   tasks:
-    - name: Get NetBox devices with 'zabbix' tag
-      uri:
-        url: "{{ netbox_url }}/dcim/devices/?tag=zabbix&platform__n=aoscx,aoscx_l2&status=active"
-        method: GET
-        headers:
-          Authorization: "Token {{ netbox_token }}"
-        return_content: yes
-        status_code: 200
-      register: netbox_devices
-      retries: 3
-      delay: 5
+    - name: Filter devices with 'zabbix' tag
+      set_fact:
+        zabbix_tagged_devices: |
+          {{ 
+            hostvars | dict2items 
+            | selectattr('value.tags', 'defined') 
+            | selectattr('value.tags', 'contains', 'zabbix') 
+            | map(attribute='key') | list 
+          }}
+      run_once: true
 
     - name: Get Zabbix proxy ID (if proxy is configured)
       uri:
@@ -55,9 +51,11 @@
             "id": 1
           }
       register: zabbix_proxy
+      delegate_to: localhost
+      run_once: true
       when: zabbix_default_proxy is defined
 
-    - name: Create/update hosts in Zabbix
+    - name: Create/update hosts in Zabbix (only for devices with zabbix tag)
       uri:
         url: "{{ zabbix_api_url }}"
         method: POST
@@ -69,20 +67,20 @@
             "jsonrpc": "2.0",
             "method": "host.create",
             "params": {
-              "host": "{{ item.name }}",
+              "host": "{{ inventory_hostname }}",
               "interfaces": [{
                 "type": 1,
                 "main": 1,
                 "useip": 1,
-                "ip": "{{ item.primary_ip4.address.split('/')[0] }}",
+                "ip": "{{ hostvars[inventory_hostname].ansible_host }}",
                 "dns": "",
                 "port": "10050"
               }],
               "groups": [{
-                "groupid": "{{ site_to_group_mapping[item.site.slug] | default(site_to_group_mapping['_default']) }}"
+                "groupid": "{{ site_to_group_mapping[hostvars[inventory_hostname].site.slug] | default(site_to_group_mapping['_default']) }}"
               }],
               "templates": [{
-                "templateid": "{{ role_to_template_mapping[item.device_role.slug].templateid | default(role_to_template_mapping['_default'].templateid) }}"
+                "templateid": "{{ role_to_template_mapping[hostvars[inventory_hostname].device_role.slug].templateid | default(role_to_template_mapping['_default'].templateid) }}"
               }]
               {% if zabbix_proxy is defined and zabbix_proxy.json.result %}
               ,"proxy_hostid": "{{ zabbix_proxy.json.result[0].proxyid }}"
@@ -91,8 +89,10 @@
             "auth": "{{ zabbix_api_token }}",
             "id": 1
           }
-      loop: "{{ netbox_devices.json.results }}"
-      when: item.primary_ip4 is defined
+      delegate_to: localhost
+      when: 
+        - inventory_hostname in zabbix_tagged_devices
+        - hostvars[inventory_hostname].ansible_host is defined
       register: host_creation
       retries: 3
       delay: 5
@@ -100,6 +100,7 @@
     - name: Show creation results
       debug:
         msg: |
-          Processed {{ host_creation.results | length }} devices
+          Processed devices: {{ zabbix_tagged_devices | length }}
           Success: {{ host_creation.results | selectattr('failed', 'equalto', false) | list | length }}
           Failed: {{ host_creation.results | selectattr('failed') | list | length }}
+      run_once: true
