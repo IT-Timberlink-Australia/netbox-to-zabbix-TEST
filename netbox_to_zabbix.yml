@@ -15,22 +15,27 @@
         templateid: "10564"
     
     site_to_group_mapping:
-      "bell_bay": "22"
       "tarpeena": "23"
+      "bell_bay": "22"
       "_default": "5"
     
     site_to_proxy_mapping:
-      "1": "10633"    # Site ID 22 → Proxy ID 10633
-      "2": "10761"    # Site ID 23 → Proxy ID 10761
+      "bell_bay": "10633"    # Site bell_bay → Proxy ID 10633
+      "tarpeena": "10761"    # Site tarpeena → Proxy ID 10761
       "_default": "10084"
 
     # SNMP Templates
     snmp_v2_templates: ["10748", "10445"]
 
   tasks:
-    - name: Verify we have inventory data
+    - name: Verify inventory data
       debug:
-        msg: "Processing device {{ inventory_hostname }} with IP {{ ansible_host }}"
+        msg: |
+          Device: {{ inventory_hostname }}
+          IP: {{ ansible_host }}
+          Description: "{{ hostvars[inventory_hostname].description | default('Not provided') }}"
+          Site ID: {{ site_id }}
+          Device Role: {{ device_roles[0] }}
       run_once: true
 
     - name: Get existing host from Zabbix
@@ -74,14 +79,13 @@
           set_fact:
             template_id: "{{ role_to_template_mapping[device_roles[0]].templateid | default(role_to_template_mapping['_default'].templateid) }}"
 
-        - name: Debug NetBox description
-          debug:
-            var: description
-          when: description is defined
-
         - name: Set visible name
           set_fact:
-            visible_name: "{{ inventory_hostname }} - {{ description if description is defined and description | trim != '' else 'No description' }}"
+            visible_name: "{{ inventory_hostname }} - {{ hostvars[inventory_hostname].description | default('No description') }}"
+
+        - name: Debug visible name
+          debug:
+            msg: "Final visible name will be: '{{ visible_name }}'"
 
         - name: Set interface configuration
           set_fact:
@@ -101,12 +105,12 @@
               }]
               {% else %}
               [{
-                "type": 3,  # IPMI interface type
+                "type": 3,
                 "main": 1,
                 "useip": 1,
                 "ip": "{{ ansible_host }}",
                 "dns": "",
-                "port": "623"  # Default IPMI port
+                "port": "623"
               }]
               {% endif %}
 
