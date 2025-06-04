@@ -66,7 +66,16 @@
     - name: Determine interface configuration
       set_fact:
         interface_config: |
-          {% if 'snmp' in zabbix_template_name | lower %}
+          {% if 'agent' in zabbix_template_name | lower %}
+          [{
+            "type": 1,
+            "main": 1,
+            "useip": 1,
+            "ip": "{{ ansible_host }}",
+            "dns": "",
+            "port": "161"
+          }]
+          {% elif 'snmp' in zabbix_template_name | lower %}
           [{
             "type": 2,
             "main": 1,
