@@ -10,12 +10,9 @@ compose:
   device_role_slug: "device_role.slug"
   tags: "tags"
   description: "description"
-device_query_filters:
-  - platform: 'aoscx_l2'
-  - platform: 'aoscx'
 query_filters:
   - status: 'active'
-  - tag: 'zabbix'
+  - cf_mon_required: 'true'
   - has_primary_ip: 'true'
 group_by:
   - sites
