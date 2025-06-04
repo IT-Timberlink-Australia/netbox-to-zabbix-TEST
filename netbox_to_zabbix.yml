@@ -3,29 +3,8 @@
   hosts: all
   gather_facts: false
   vars:
-    # API Configuration
     zabbix_api_url: "{{ lookup('env', 'ZABBIX_API_URL') }}"
     zabbix_api_token: "{{ lookup('env', 'ZABBIX_API_TOKEN') }}"
-    
-    # Device Mapping Configuration
-    role_to_template_mapping:
-      "network-switch-edge-sw": 
-        templateid: "10748"
-      "_default":
-        templateid: "10564"
-    
-    site_to_group_mapping:
-      "tarpeena": "23"
-      "bell_bay": "22"
-      "_default": "5"
-    
-    site_to_proxy_mapping:
-      "1": "10632"    # Site ID 22 → Proxy ID 10632
-      "2": "10639"    # Site ID 23 → Proxy ID 10639
-      "_default": "10084"
-
-    # SNMP Templates
-    snmp_v2_templates: ["10748", "10445"]
 
   tasks:
     - name: Verify inventory data
@@ -34,10 +13,82 @@
           Device: {{ inventory_hostname }}
           IP: {{ ansible_host }}
           Description: "{{ description | default('Not provided') }}"
-          Site ID: {{ site_id }} (Type: {{ site_id | type_debug }})
+          Site ID: {{ site_id }}
           Site Slug: {{ site_slug }}
-          Device Role: {{ device_roles[0] }}
+          Template Name: {{ zabbix_template_name }}
       run_once: true
+
+    - name: Ensure Zabbix template name is defined
+      assert:
+        that:
+          - zabbix_template_name is defined
+          - zabbix_template_name | length > 0
+        fail_msg: "Missing Zabbix template name for {{ inventory_hostname }}"
+
+    - name: Lookup Zabbix template ID by name
+      uri:
+        url: "{{ zabbix_api_url }}"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body: |
+          {
+            "jsonrpc": "2.0",
+            "method": "template.get",
+            "params": {
+              "output": ["templateid"],
+              "filter": {
+                "host": "{{ zabbix_template_name }}"
+              }
+            },
+            "auth": "{{ zabbix_api_token }}",
+            "id": 1
+          }
+        validate_certs: no
+      delegate_to: localhost
+      register: zabbix_template_lookup
+      failed_when: zabbix_template_lookup.json.result | length == 0
+
+    - name: Set Zabbix template ID
+      set_fact:
+        template_id: "{{ zabbix_template_lookup.json.result[0].templateid }}"
+
+    - name: Determine proxy ID
+      set_fact:
+        proxy_id: "{{ site_to_proxy_mapping[site_id | string] | default(site_to_proxy_mapping['_default']) }}"
+
+    - name: Notify if no proxy is assigned
+      debug:
+        msg: "No Zabbix proxy assigned for {{ inventory_hostname }} (Site ID: {{ site_id }})"
+      when: proxy_id | length == 0
+
+    - name: Determine interface configuration
+      set_fact:
+        interface_config: |
+          {% if 'snmp' in zabbix_template_name | lower %}
+          [{
+            "type": 2,
+            "main": 1,
+            "useip": 1,
+            "ip": "{{ ansible_host }}",
+            "dns": "",
+            "port": "161",
+            "details": {
+              "version": 2,
+              "community": "{$SNMP_COMMUNITY}"
+            }
+          }]
+          {% else %}
+          [{
+            "type": 3,
+            "main": 1,
+            "useip": 1,
+            "ip": "{{ ansible_host }}",
+            "dns": "",
+            "port": "623"
+          }]
+          {% endif %}
 
     - name: Get existing host from Zabbix
       uri:
@@ -59,146 +110,79 @@
             "auth": "{{ zabbix_api_token }}",
             "id": 1
           }
-        status_code: 200
         validate_certs: no
       delegate_to: localhost
       register: zabbix_host_check
-      retries: 3
-      delay: 5
 
-    - name: Create/update host in Zabbix
-      block:
-        - name: Validate required fields
-          assert:
-            that:
-              - ansible_host is defined
-              - site_id is defined
-              - device_roles[0] is defined
-            fail_msg: "Missing required fields for {{ inventory_hostname }}"
+    - name: Set visible name
+      set_fact:
+        visible_name: "{{ inventory_hostname }} - {{ description | default('No description') | trim }}"
 
-        - name: Determine template ID
-          set_fact:
-            template_id: "{{ role_to_template_mapping[device_roles[0]].templateid | default(role_to_template_mapping['_default'].templateid) }}"
-
-        - name: Set visible name
-          set_fact:
-            visible_name: "{{ inventory_hostname }} - {{ description | default('No description') | trim }}"
-
-        - name: Determine proxy ID
-          set_fact:
-            proxy_id: "{{ site_to_proxy_mapping[site_id | string] | default(site_to_proxy_mapping['_default']) }}"
-
-        - name: Debug proxy assignment
-          debug:
-            msg: |
-              Proxy Assignment Details:
-              Site ID: {{ site_id }}
-              Mapped Proxy ID: {{ proxy_id }}
-              Proxy ID Type: {{ proxy_id | type_debug }}
-
-        - name: Set interface configuration
-          set_fact:
-            interface_config: |
-              {% if template_id in snmp_v2_templates %}
-              [{
-                "type": 2,
-                "main": 1,
-                "useip": 1,
-                "ip": "{{ ansible_host }}",
-                "dns": "",
-                "port": "161",
-                "details": {
-                  "version": 2,
-                  "community": "{$SNMP_COMMUNITY}"
-                }
-              }]
-              {% else %}
-              [{
-                "type": 3,
-                "main": 1,
-                "useip": 1,
-                "ip": "{{ ansible_host }}",
-                "dns": "",
-                "port": "623"
-              }]
+    - name: Create new host in Zabbix
+      uri:
+        url: "{{ zabbix_api_url }}"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body: |
+          {
+            "jsonrpc": "2.0",
+            "method": "host.create",
+            "params": {
+              "host": "{{ inventory_hostname }}",
+              "name": "{{ visible_name }}",
+              "interfaces": {{ interface_config }},
+              "groups": [{
+                "groupid": "{{ site_to_group_mapping[site_slug] | default(site_to_group_mapping['_default']) }}"
+              }],
+              "templates": [{
+                "templateid": "{{ template_id }}"
+              }}
+              {% if proxy_id is defined and proxy_id | length > 0 %},
+              "proxy_hostid": "{{ proxy_id }}"
               {% endif %}
+            },
+            "auth": "{{ zabbix_api_token }}",
+            "id": 1
+          }
+        validate_certs: no
+      delegate_to: localhost
+      register: host_creation
+      when: zabbix_host_check.json.result | length == 0
 
-        - name: Create new host in Zabbix
-          uri:
-            url: "{{ zabbix_api_url }}"
-            method: POST
-            headers:
-              Content-Type: "application/json"
-            body_format: json
-            body: |
-              {
-                "jsonrpc": "2.0",
-                "method": "host.create",
-                "params": {
-                  "host": "{{ inventory_hostname }}",
-                  "name": "{{ visible_name }}",
-                  "interfaces": {{ interface_config }},
-                  "groups": [{
-                    "groupid": "{{ site_to_group_mapping[site_slug] | default(site_to_group_mapping['_default']) }}"
-                  }],
-                  "templates": [{
-                    "templateid": "{{ template_id }}"
-                  }],
-                  {% if proxy_id != '' %}
-                  "proxy_hostid": "{{ proxy_id }}"
-                  {% endif %}
-                },
-                "auth": "{{ zabbix_api_token }}",
-                "id": 1
-              }
-            status_code: 200
-            validate_certs: no
-          delegate_to: localhost
-          register: host_creation
-          retries: 3
-          delay: 5
-          when: zabbix_host_check.json.result | length == 0
-
-        - name: Update existing host in Zabbix
-          uri:
-            url: "{{ zabbix_api_url }}"
-            method: POST
-            headers:
-              Content-Type: "application/json"
-            body_format: json
-            body: |
-              {
-                "jsonrpc": "2.0",
-                "method": "host.update",
-                "params": {
-                  "hostid": "{{ zabbix_host_check.json.result[0].hostid }}",
-                  "name": "{{ visible_name }}",
-                  "interfaces": {{ interface_config }},
-                  "groups": [{
-                    "groupid": "{{ site_to_group_mapping[site_slug] | default(site_to_group_mapping['_default']) }}"
-                  }],
-                  "templates": [{
-                    "templateid": "{{ template_id }}"
-                  }],
-                  {% if proxy_id != '' %}
-                  "proxy_hostid": "{{ proxy_id }}"
-                  {% endif %}
-                },
-                "auth": "{{ zabbix_api_token }}",
-                "id": 1
-              }
-            status_code: 200
-            validate_certs: no
-          delegate_to: localhost
-          register: host_update
-          retries: 3
-          delay: 5
-          when: zabbix_host_check.json.result | length > 0
-      
-      rescue:
-        - name: Log creation/update error
-          debug:
-            msg: "Failed to process {{ inventory_hostname }}: {{ ansible_failed_result.msg }}"
+    - name: Update existing host in Zabbix
+      uri:
+        url: "{{ zabbix_api_url }}"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body: |
+          {
+            "jsonrpc": "2.0",
+            "method": "host.update",
+            "params": {
+              "hostid": "{{ zabbix_host_check.json.result[0].hostid }}",
+              "name": "{{ visible_name }}",
+              "interfaces": {{ interface_config }},
+              "groups": [{
+                "groupid": "{{ site_to_group_mapping[site_slug] | default(site_to_group_mapping['_default']) }}"
+              }],
+              "templates": [{
+                "templateid": "{{ template_id }}"
+              }}
+              {% if proxy_id is defined and proxy_id | length > 0 %},
+              "proxy_hostid": "{{ proxy_id }}"
+              {% endif %}
+            },
+            "auth": "{{ zabbix_api_token }}",
+            "id": 1
+          }
+        validate_certs: no
+      delegate_to: localhost
+      register: host_update
+      when: zabbix_host_check.json.result | length > 0
 
     - name: Show sync result
       debug:
@@ -214,7 +198,7 @@
           Response: {{ host_creation.json | default('No response') }}
           {% endif %}
           Visible Name: "{{ visible_name }}"
-          Interface Type: {{ 'SNMP v2' if template_id in snmp_v2_templates else 'IPMI' }}
+          Interface Type: {{ 'SNMP v2' if 'snmp' in zabbix_template_name | lower else 'IPMI' }}
           Template ID: {{ template_id }}
           Proxy ID: {{ proxy_id }}
       when: (host_creation is defined or host_update is defined)
