@@ -125,7 +125,7 @@
 
     - name: Set visible name
       set_fact:
-        visible_name: "{{ inventory_hostname }} - {{ description | default('No description') | trim }}"
+        visible_name: "{{ inventory_hostname }}{% if description is defined and description|length > 0 %} - {{ description | trim }}{% endif %}"
 
     - name: Create new host in Zabbix
       uri:
@@ -141,13 +141,13 @@
             "params": {
               "host": "{{ inventory_hostname }}",
               "name": "{{ visible_name }}",
-              "interfaces": {{ interface_config }},
+              "interfaces": {{ interface_config | from_yaml }},
               "groups": [{
                 "groupid": "{{ site_to_group_mapping[site_slug] | default(site_to_group_mapping['_default']) }}"
               }],
               "templates": [{
                 "templateid": "{{ template_id }}"
-              }}
+              }]
               {% if proxy_id is defined and proxy_id | length > 0 %},
               "proxy_hostid": "{{ proxy_id }}"
               {% endif %}
@@ -174,13 +174,13 @@
             "params": {
               "hostid": "{{ zabbix_host_check.json.result[0].hostid }}",
               "name": "{{ visible_name }}",
-              "interfaces": {{ interface_config }},
+              "interfaces": {{ interface_config | from_yaml }},
               "groups": [{
                 "groupid": "{{ site_to_group_mapping[site_slug] | default(site_to_group_mapping['_default']) }}"
               }],
               "templates": [{
                 "templateid": "{{ template_id }}"
-              }}
+              }]
               {% if proxy_id is defined and proxy_id | length > 0 %},
               "proxy_hostid": "{{ proxy_id }}"
               {% endif %}
