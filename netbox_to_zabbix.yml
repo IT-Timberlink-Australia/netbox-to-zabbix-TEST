@@ -113,21 +113,28 @@
       set_fact:
         zabbix_tags: >-
           {%- set tags = [] -%}
-          {%- if "network switch core" in device_roles -%}
-          {%- set _ = tags.append({"tag": "device", "value": "switch core"}) -%}
-          {%- elif "network switch edge" in device_roles -%}
-          {%- set _ = tags.append({"tag": "device", "value": "switch edge"}) -%}
-          {%- endif -%}
-          {%- if site_id == 2 -%}
-          {%- set _ = tags.append({"tag": "site", "value": "tar"}) -%}
-          {%- elif site_id == 1 -%}
-          {%- set _ = tags.append({"tag": "site", "value": "bel"}) -%}
-          {%- endif -%}
+
+          {% if device_roles is defined %}
+          {%   set normrole = device_roles | lower | regex_replace('\s+', ' ') %}
+          {%   if 'network switch - core' in normrole %}
+          {%     set _ = tags.append({"tag": "device", "value": "switch core"}) %}
+          {%   elif 'network switch - edge' in normrole %}
+          {%     set _ = tags.append({"tag": "device", "value": "switch edge"}) %}
+          {%   endif %}
+          {% endif %}
+
+          {% if (site_id | int) == 23 %}
+          {%   set _ = tags.append({"tag": "site", "value": "tar"}) %}
+          {% elif (site_id | int) == 22 %}
+          {%   set _ = tags.append({"tag": "site", "value": "bel"}) %}
+          {% endif %}
+
           {{ tags }}
-    - name: Debug: show computed zabbix_tags
+
+    - name: show computed zabbix_tags
       debug:
         var: zabbix_tags
-        
+
     - name: Create new host in Zabbix
       uri:
         url: "{{ zabbix_api_url }}"
