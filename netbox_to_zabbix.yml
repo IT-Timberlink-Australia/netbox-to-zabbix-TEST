@@ -111,6 +111,10 @@
       set_fact:
         visible_name: "{{ inventory_hostname }}{% if description is defined and description|length > 0 %} - {{ description | trim }}{% endif %}"
 
+    - name: Debug device_roles
+      debug:
+        var: device_roles
+        
     - name: Set Zabbix host tags based on device role and site
       set_fact:
         zabbix_tags: >-
