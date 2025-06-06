@@ -111,26 +111,29 @@
       set_fact:
         visible_name: "{{ inventory_hostname }}{% if description is defined and description|length > 0 %} - {{ description | trim }}{% endif %}"
 
-    - name: Debug device_roles
-      debug:
-        var: device_roles
-        
     - name: Set Zabbix host tags based on device role and site
       set_fact:
         zabbix_tags: >-
           {%- set tags = [] -%}
-          {% set normrole = (device_roles | default('') | lower | regex_replace('\s+', ' ')) %}
-          {% if 'network switch - core' in normrole %}
-            {% set _ = tags.append({"tag": "device", "value": "switch core"}) %}
-          {% elif 'network switch - edge' in normrole %}
-            {% set _ = tags.append({"tag": "device", "value": "switch edge"}) %}
-          {% endif %}
-          {% if (site_id | int) == 23 %}
-            {% set _ = tags.append({"tag": "site", "value": "tar"}) %}
-          {% elif (site_id | int) == 22 %}
-            {% set _ = tags.append({"tag": "site", "value": "bel"}) %}
-          {% endif %}
+          {%- if device_roles is defined and device_roles | length > 0 -%}
+            {%- for role in device_roles -%}
+              {%- set normrole = role | lower | regex_replace('\s+', ' ') -%}
+              {%- if 'core' in normrole -%}
+                {%- set _ = tags.append({"tag": "device", "value": "switch core"}) -%}
+              {%- elif 'edge' in normrole -%}
+                {%- set _ = tags.append({"tag": "device", "value": "switch edge"}) -%}
+              {%- endif -%}
+            {%- endfor -%}
+          {%- endif -%}
+
+          {%- if (site_id | int) == 23 -%}
+            {%- set _ = tags.append({"tag": "site", "value": "tar"}) -%}
+          {%- elif (site_id | int) == 22 -%}
+            {%- set _ = tags.append({"tag": "site", "value": "bel"}) -%}
+          {%- endif -%}
+
           {{ tags }}
+
 
     - name: Show computed zabbix_tags
       debug:
