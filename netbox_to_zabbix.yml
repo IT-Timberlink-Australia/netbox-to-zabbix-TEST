@@ -174,7 +174,6 @@
             "params": {
               "hostid": "{{ zabbix_host_check.json.result[0].hostid }}",
               "name": "{{ visible_name }}",
-              "interfaces": {{ interface_config | from_yaml }},
               "groups": [{
                 "groupid": "{{ site_to_group_mapping[site_slug] | default(site_to_group_mapping['_default']) }}"
               }],
