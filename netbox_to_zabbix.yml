@@ -16,7 +16,7 @@
           Site ID: {{ site_id }}
           Site Slug: {{ site_slug }}
           Template Name: {{ zabbix_template_name }}
-      run_once: true
+      # run_once: true   # <-- Remove to see info for each host
 
     - name: Ensure Zabbix template name is defined
       assert:
@@ -68,7 +68,7 @@
         interface_config: |
           {% if 'agent' in zabbix_template_name | lower %}
           [ {
-            "type": 1, "main": 1, "useip": 1, "ip": "{{ ansible_host }}", "dns": "", "port": "161"
+            "type": 1, "main": 1, "useip": 1, "ip": "{{ ansible_host }}", "dns": "", "port": "10050"
           } ]
           {% elif 'snmp' in zabbix_template_name | lower %}
           [ {
@@ -80,6 +80,8 @@
             "type": 3, "main": 1, "useip": 1, "ip": "{{ ansible_host }}", "dns": "", "port": "623"
           } ]
           {% endif %}
+      # "type": 1 is Zabbix Agent, 2 is SNMP, 3 is IPMI
+      # Zabbix Agent default port is 10050, SNMP is 161, IPMI is 623
 
     - name: Get existing host from Zabbix
       uri:
@@ -113,25 +115,20 @@
       set_fact:
         zabbix_tags: >-
           {%- set tags = [] -%}
-
-          {% if device_roles is defined %}
-          {%   set normrole = device_roles | lower | regex_replace('\s+', ' ') %}
-          {%   if 'network switch - core' in normrole %}
-          {%     set _ = tags.append({"tag": "device", "value": "switch core"}) %}
-          {%   elif 'network switch - edge' in normrole %}
-          {%     set _ = tags.append({"tag": "device", "value": "switch edge"}) %}
-          {%   endif %}
+          {% set normrole = (device_roles | default('') | lower | regex_replace('\s+', ' ')) %}
+          {% if 'network switch - core' in normrole %}
+            {% set _ = tags.append({"tag": "device", "value": "switch core"}) %}
+          {% elif 'network switch - edge' in normrole %}
+            {% set _ = tags.append({"tag": "device", "value": "switch edge"}) %}
           {% endif %}
-
           {% if (site_id | int) == 23 %}
-          {%   set _ = tags.append({"tag": "site", "value": "tar"}) %}
+            {% set _ = tags.append({"tag": "site", "value": "tar"}) %}
           {% elif (site_id | int) == 22 %}
-          {%   set _ = tags.append({"tag": "site", "value": "bel"}) %}
+            {% set _ = tags.append({"tag": "site", "value": "bel"}) %}
           {% endif %}
-
           {{ tags }}
 
-    - name: show computed zabbix_tags
+    - name: Show computed zabbix_tags
       debug:
         var: zabbix_tags
 
@@ -155,7 +152,7 @@
               }],
               "templates": [{
                 "templateid": "{{ template_id }}"
-              }]
+              }}
               {% if proxy_id is defined and proxy_id | length > 0 %},
               "proxy_hostid": "{{ proxy_id }}"
               {% endif %}
@@ -190,7 +187,7 @@
               }],
               "templates": [{
                 "templateid": "{{ template_id }}"
-              }]
+              }}
               {% if proxy_id is defined and proxy_id | length > 0 %},
               "proxy_hostid": "{{ proxy_id }}"
               {% endif %}
