@@ -109,16 +109,21 @@
       set_fact:
         visible_name: "{{ inventory_hostname }}{% if description is defined and description|length > 0 %} - {{ description | trim }}{% endif %}"
 
-    - name: Set Zabbix host tags based on device role
+    - name: Set Zabbix host tags based on device role and site
       set_fact:
         zabbix_tags: >-
-          {% if "Network Switch -  Core" in device_role %}
-          [{"tag": "device", "value": "switch core"}]
-          {% elif "Network Switch -  Edge" in device_role %}
-          [{"tag": "device", "value": "switch edge"}]
-          {% else %}
-          []
-          {% endif %}
+          {%- set tags = [] -%}
+          {%- if "Network Switch -  Core" in device_role -%}
+          {%- set _ = tags.append({"tag": "device", "value": "switch core"}) -%}
+          {%- elif "Network Switch -  Edge" in device_role -%}
+          {%- set _ = tags.append({"tag": "device", "value": "switch edge"}) -%}
+          {%- endif -%}
+          {%- if site_id == 23 -%}
+          {%- set _ = tags.append({"tag": "site", "value": "tar"}) -%}
+          {%- elif site_id == 22 -%}
+          {%- set _ = tags.append({"tag": "site", "value": "bel"}) -%}
+          {%- endif -%}
+          {{ tags }}
 
     - name: Create new host in Zabbix
       uri:
