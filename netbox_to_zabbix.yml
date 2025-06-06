@@ -67,36 +67,18 @@
       set_fact:
         interface_config: |
           {% if 'agent' in zabbix_template_name | lower %}
-          [{
-            "type": 1,
-            "main": 1,
-            "useip": 1,
-            "ip": "{{ ansible_host }}",
-            "dns": "",
-            "port": "161"
-          }]
+          [ {
+            "type": 1, "main": 1, "useip": 1, "ip": "{{ ansible_host }}", "dns": "", "port": "161"
+          } ]
           {% elif 'snmp' in zabbix_template_name | lower %}
-          [{
-            "type": 2,
-            "main": 1,
-            "useip": 1,
-            "ip": "{{ ansible_host }}",
-            "dns": "",
-            "port": "161",
-            "details": {
-              "version": 2,
-              "community": "{$SNMP_COMMUNITY}"
-            }
-          }]
+          [ {
+            "type": 2, "main": 1, "useip": 1, "ip": "{{ ansible_host }}", "dns": "", "port": "161",
+            "details": { "version": 2, "community": "{$SNMP_COMMUNITY}" }
+          } ]
           {% else %}
-          [{
-            "type": 3,
-            "main": 1,
-            "useip": 1,
-            "ip": "{{ ansible_host }}",
-            "dns": "",
-            "port": "623"
-          }]
+          [ {
+            "type": 3, "main": 1, "useip": 1, "ip": "{{ ansible_host }}", "dns": "", "port": "623"
+          } ]
           {% endif %}
 
     - name: Get existing host from Zabbix
@@ -127,6 +109,17 @@
       set_fact:
         visible_name: "{{ inventory_hostname }}{% if description is defined and description|length > 0 %} - {{ description | trim }}{% endif %}"
 
+    - name: Set Zabbix host tags based on device role
+      set_fact:
+        zabbix_tags: >-
+          {% if "Network Switch -  Core" in device_role %}
+          [{"tag": "device", "value": "switch core"}]
+          {% elif "Network Switch -  Edge" in device_role %}
+          [{"tag": "device", "value": "switch edge"}]
+          {% else %}
+          []
+          {% endif %}
+
     - name: Create new host in Zabbix
       uri:
         url: "{{ zabbix_api_url }}"
@@ -150,6 +143,9 @@
               }]
               {% if proxy_id is defined and proxy_id | length > 0 %},
               "proxy_hostid": "{{ proxy_id }}"
+              {% endif %}
+              {% if zabbix_tags | length > 0 %},
+              "tags": {{ zabbix_tags | to_nice_json }}
               {% endif %}
             },
             "auth": "{{ zabbix_api_token }}",
@@ -183,6 +179,9 @@
               {% if proxy_id is defined and proxy_id | length > 0 %},
               "proxy_hostid": "{{ proxy_id }}"
               {% endif %}
+              {% if zabbix_tags | length > 0 %},
+              "tags": {{ zabbix_tags | to_nice_json }}
+              {% endif %}
             },
             "auth": "{{ zabbix_api_token }}",
             "id": 1
@@ -209,4 +208,3 @@
           Interface Type: {{ 'SNMP v2' if 'snmp' in zabbix_template_name | lower else 'IPMI' }}
           Template ID: {{ template_id }}
           Proxy ID: {{ proxy_id }}
-      when: (host_creation is defined or host_update is defined)
