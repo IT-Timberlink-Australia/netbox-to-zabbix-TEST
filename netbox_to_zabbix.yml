@@ -113,14 +113,14 @@
       set_fact:
         zabbix_tags: >-
           {%- set tags = [] -%}
-          {%- if "Network Switch -  Core" in device_role -%}
+          {%- if "network switch core" in device_roles -%}
           {%- set _ = tags.append({"tag": "device", "value": "switch core"}) -%}
-          {%- elif "Network Switch -  Edge" in device_role -%}
+          {%- elif "network switch edge" in device_roles -%}
           {%- set _ = tags.append({"tag": "device", "value": "switch edge"}) -%}
           {%- endif -%}
-          {%- if site_id == 23 -%}
+          {%- if site_id == 2 -%}
           {%- set _ = tags.append({"tag": "site", "value": "tar"}) -%}
-          {%- elif site_id == 22 -%}
+          {%- elif site_id == 1 -%}
           {%- set _ = tags.append({"tag": "site", "value": "bel"}) -%}
           {%- endif -%}
           {{ tags }}
