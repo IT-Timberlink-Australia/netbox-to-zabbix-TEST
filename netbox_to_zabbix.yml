@@ -134,7 +134,6 @@
 
           {{ tags }}
 
-
     - name: Show computed zabbix_tags
       debug:
         var: zabbix_tags
