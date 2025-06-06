@@ -124,7 +124,10 @@
           {%- set _ = tags.append({"tag": "site", "value": "bel"}) -%}
           {%- endif -%}
           {{ tags }}
-
+    - name: Debug: show computed zabbix_tags
+      debug:
+        var: zabbix_tags
+        
     - name: Create new host in Zabbix
       uri:
         url: "{{ zabbix_api_url }}"
