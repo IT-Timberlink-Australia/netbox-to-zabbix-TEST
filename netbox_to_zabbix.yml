@@ -114,25 +114,17 @@
     - name: Set Zabbix host tags based on device role and site
       set_fact:
         zabbix_tags: >-
-          {%- set tags = [] -%}
-          {%- if device_roles is defined and device_roles | length > 0 -%}
-            {%- for role in device_roles -%}
-              {%- set normrole = role | lower | regex_replace('\s+', ' ') -%}
-              {%- if 'core' in normrole -%}
-                {%- set _ = tags.append({"tag": "device", "value": "switch core"}) -%}
-              {%- elif 'edge' in normrole -%}
-                {%- set _ = tags.append({"tag": "device", "value": "switch edge"}) -%}
-              {%- endif -%}
-            {%- endfor -%}
-          {%- endif -%}
-
-          {%- if (site_id | int) == 23 -%}
-            {%- set _ = tags.append({"tag": "site", "value": "tar"}) -%}
-          {%- elif (site_id | int) == 22 -%}
-            {%- set _ = tags.append({"tag": "site", "value": "bel"}) -%}
-          {%- endif -%}
-
-          {{ tags }}
+          {{
+            (
+              [ {"tag": "device", "value": "switch core"} for role in device_roles | default([]) if 'core' in (role | lower) ]
+              +
+              [ {"tag": "device", "value": "switch edge"} for role in device_roles | default([]) if 'edge' in (role | lower) ]
+              +
+              ([ {"tag": "site", "value": "tar"} ] if (site_id | int) == 23 else [])
+              +
+              ([ {"tag": "site", "value": "bel"} ] if (site_id | int) == 22 else [])
+            )
+          }}
 
     - name: Show computed zabbix_tags
       debug:
