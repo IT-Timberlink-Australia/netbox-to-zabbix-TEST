@@ -200,7 +200,7 @@
           params: "{{ zabbix_create_params }}"
           auth: "{{ zabbix_api_token }}"
           id: 1
-      validate_certs: no
+        validate_certs: no
       delegate_to: localhost
       register: host_creation
       when: zabbix_host_check.json.result | length == 0
@@ -218,7 +218,7 @@
           params: "{{ zabbix_update_params }}"
           auth: "{{ zabbix_api_token }}"
           id: 1
-      validate_certs: no
+        validate_certs: no
       delegate_to: localhost
       register: host_update
       when: zabbix_host_check.json.result | length > 0
