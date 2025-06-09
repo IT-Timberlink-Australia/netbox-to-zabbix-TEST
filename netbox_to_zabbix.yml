@@ -140,36 +140,52 @@
 
     - name: Build Zabbix host create params
       set_fact:
-        zabbix_create_params:
-          host: "{{ inventory_hostname }}"
-          name: "{{ visible_name }}"
-          interfaces: "{{ interface_config | from_yaml }}"
-          groups:
-            - groupid: "{{ site_to_group_mapping[site_slug] | default(site_to_group_mapping['_default']) }}"
-          templates:
-            - templateid: "{{ template_id }}"
-          {% if proxy_id is defined and proxy_id | length > 0 %}
-          proxy_hostid: "{{ proxy_id }}"
-          {% endif %}
-          {% if zabbix_tags | length > 0 %}
-          tags: "{{ zabbix_tags }}"
-          {% endif %}
+        zabbix_create_params: >-
+          {{
+            {
+              "host": inventory_hostname,
+              "name": visible_name,
+              "interfaces": interface_config | from_yaml,
+              "groups": [
+                {"groupid": site_to_group_mapping[site_slug] | default(site_to_group_mapping['_default']) }
+              ],
+              "templates": [
+                {"templateid": template_id }
+              ]
+            }
+            | combine(
+                (proxy_id is defined and proxy_id | length > 0) | ternary({"proxy_hostid": proxy_id}, {}),
+                recursive=True
+              )
+            | combine(
+                (zabbix_tags | length > 0) | ternary({"tags": zabbix_tags}, {}),
+                recursive=True
+              )
+          }}
 
     - name: Build Zabbix host update params
       set_fact:
-        zabbix_update_params:
-          hostid: "{{ zabbix_host_check.json.result[0].hostid }}"
-          name: "{{ visible_name }}"
-          groups:
-            - groupid: "{{ site_to_group_mapping[site_slug] | default(site_to_group_mapping['_default']) }}"
-          templates:
-            - templateid: "{{ template_id }}"
-          {% if proxy_id is defined and proxy_id | length > 0 %}
-          proxy_hostid: "{{ proxy_id }}"
-          {% endif %}
-          {% if zabbix_tags | length > 0 %}
-          tags: "{{ zabbix_tags }}"
-          {% endif %}
+        zabbix_update_params: >-
+          {{
+            {
+              "hostid": zabbix_host_check.json.result[0].hostid,
+              "name": visible_name,
+              "groups": [
+                {"groupid": site_to_group_mapping[site_slug] | default(site_to_group_mapping['_default']) }
+              ],
+              "templates": [
+                {"templateid": template_id }
+              ]
+            }
+            | combine(
+                (proxy_id is defined and proxy_id | length > 0) | ternary({"proxy_hostid": proxy_id}, {}),
+                recursive=True
+              )
+            | combine(
+                (zabbix_tags | length > 0) | ternary({"tags": zabbix_tags}, {}),
+                recursive=True
+              )
+          }}
 
     - name: Create new host in Zabbix
       uri:
