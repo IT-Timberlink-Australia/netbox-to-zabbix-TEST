@@ -134,6 +134,10 @@
       debug:
         var: zabbix_tags
 
+    - name: Debug proxy_id
+      debug:
+        msg: "Host: {{ inventory_hostname }}, site_id: {{ site_id }}, proxy_id: {{ proxy_id }}"
+
     - name: Build Zabbix host create params
       set_fact:
         zabbix_create_params: >-
