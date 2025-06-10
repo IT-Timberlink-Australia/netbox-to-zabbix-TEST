@@ -187,7 +187,7 @@
                 recursive=True
               )
           }}
-      when: zabbix_host_check.json.result | length > 0
+        when: zabbix_host_check.json.result | length > 0
 
     - name: Create new host in Zabbix
       uri:
