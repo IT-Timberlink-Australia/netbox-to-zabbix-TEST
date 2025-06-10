@@ -18,6 +18,27 @@
           Template Name: {{ zabbix_template_name }}
       # run_once: true   # <-- Remove to see info for each host
 
+    - name: Get all Zabbix proxies
+      uri:
+        url: "{{ zabbix_api_url }}"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: "proxy.get"
+          params:
+            output: ["proxyid", "host"]
+          auth: "{{ zabbix_api_token }}"
+          id: 1
+        validate_certs: no
+      register: zabbix_proxy_list
+      delegate_to: localhost
+
+    - debug:
+        var: zabbix_proxy_list.json.result
+
     - name: Ensure Zabbix template name is defined
       assert:
         that:
