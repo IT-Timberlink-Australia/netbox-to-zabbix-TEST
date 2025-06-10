@@ -128,7 +128,8 @@
           {%- elif (site_id | int) == 22 -%}
             {%- set _ = tags.append({"tag": "site", "value": "bel"}) -%}
           {%- endif -%}
-          {%- set _ = tags.append({"tag": "nb_status", "value": status | string }) -%}
+          {%- set nbstat = status.value if status is mapping and status.value is defined else status -%}
+          {%- set _ = tags.append({"tag": "nb_status", "value": nbstat }) -%}
           {{ tags }}
 
     - name: Set Zabbix host status based on device status
