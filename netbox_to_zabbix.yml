@@ -111,23 +111,24 @@
       set_fact:
         visible_name: "{{ inventory_hostname }}{% if description is defined and description|length > 0 %} - {{ description | trim }}{% endif %}"
 
-    - name: Set Zabbix host tags based on device role and site
+    - name: Set Zabbix host tags based on device role, site, and NetBox status
       set_fact:
         zabbix_tags: >-
           {%- set tags = [] -%}
           {%- for role in device_roles | default([]) -%}
-            {%- set _role = role | lower -%}
-            {%- if 'switch-core' in _role -%}
+            {%- set normrole = role | lower -%}
+            {%- if 'core' in normrole -%}
               {%- set _ = tags.append({"tag": "device", "value": "switch core"}) -%}
-            {%- elif 'switch-edge' in _role -%}
+            {%- elif 'edge' in normrole -%}
               {%- set _ = tags.append({"tag": "device", "value": "switch edge"}) -%}
             {%- endif -%}
           {%- endfor -%}
-          {%- if (site_id | int) == 2 -%}
+          {%- if (site_id | int) == 23 -%}
             {%- set _ = tags.append({"tag": "site", "value": "tar"}) -%}
-          {%- elif (site_id | int) == 1 -%}
+          {%- elif (site_id | int) == 22 -%}
             {%- set _ = tags.append({"tag": "site", "value": "bel"}) -%}
           {%- endif -%}
+          {%- set _ = tags.append({"tag": "nb_status", "value": status | string }) -%}
           {{ tags }}
 
     - name: Set Zabbix host status based on device status
@@ -159,8 +160,7 @@
               ],
               "templates": [
                 {"templateid": template_id }
-              ],
-              "status": zabbix_host_status
+              ]
             }
             | combine(
                 (proxy_id is defined and (proxy_id | string | length > 0)) | ternary({"proxy_hostid": proxy_id | string}, {}),
@@ -185,8 +185,7 @@
               ],
               "templates": [
                 {"templateid": template_id }
-              ],
-              "status": zabbix_host_status
+              ]
             }
             | combine(
                 (proxy_id is defined and (proxy_id | string | length > 0)) | ternary({"proxy_hostid": proxy_id | string}, {}),
