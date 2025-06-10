@@ -132,9 +132,16 @@
 
     - name: Set Zabbix host status based on device status
       set_fact:
-        zabbix_host_status: "{{ 0 if status == 'active' else 1 }}"
+        zabbix_host_status: >-
+          {% if status in ['active', 'Active', 1, '1'] %}
+            0
+          {% elif (status.label | default('') | lower) == 'active' %}
+            0
+          {% else %}
+            1
+          {% endif %}
     
-      -debug:
+    - debug:
         msg: "Host: {{ inventory_hostname }} | status: {{ status }} | type: {{ status | type_debug }}"
 
     - name: Show computed zabbix_tags
