@@ -130,13 +130,13 @@
           {%- endif -%}
           {{ tags }}
 
+    - name: Set Zabbix host status based on device status
+      set_fact:
+        zabbix_host_status: "{{ 0 if status == 'active' else 1 }}"
+
     - name: Show computed zabbix_tags
       debug:
         var: zabbix_tags
-
-    - name: Debug proxy_id
-      debug:
-        msg: "Host: {{ inventory_hostname }}, site_id: {{ site_id }}, proxy_id: {{ proxy_id }}"
 
     - name: Build Zabbix host create params
       set_fact:
@@ -151,7 +151,8 @@
               ],
               "templates": [
                 {"templateid": template_id }
-              ]
+              ],
+              "status": zabbix_host_status
             }
             | combine(
                 (proxy_id is defined and (proxy_id | string | length > 0)) | ternary({"proxy_hostid": proxy_id | string}, {}),
@@ -162,7 +163,7 @@
                 recursive=True
               )
           }}
-        when: zabbix_host_check.json.result | length == 0
+      when: zabbix_host_check.json.result | length == 0
 
     - name: Build Zabbix host update params
       set_fact:
@@ -176,7 +177,8 @@
               ],
               "templates": [
                 {"templateid": template_id }
-              ]
+              ],
+              "status": zabbix_host_status
             }
             | combine(
                 (proxy_id is defined and (proxy_id | string | length > 0)) | ternary({"proxy_hostid": proxy_id | string}, {}),
