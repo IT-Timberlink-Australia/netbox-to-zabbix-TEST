@@ -7,11 +7,13 @@ compose:
   ansible_host: "primary_ip.address.split('/')[0]"
   site_id: "site.id"
   site_slug: "site.slug"
+  site_name: "site.name"
   device_role_slug: "device_role.slug"
-  tags: "tags"
+  device_role: "device_role.name"
+  tags: "tags | map(attribute='name') | list"
   description: "description"
 query_filters:
-  - status: 'active'
+  - status: ['active', 'staged']
   - cf_mon_required: 'true'
   - has_primary_ip: 'true'
 group_by:
