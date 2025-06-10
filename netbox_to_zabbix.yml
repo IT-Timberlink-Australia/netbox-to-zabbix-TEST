@@ -158,6 +158,7 @@
                 recursive=True
               )
           }}
+        when: zabbix_host_check.json.result | length == 0
 
     - name: Build Zabbix host update params
       set_fact:
@@ -182,6 +183,7 @@
                 recursive=True
               )
           }}
+      when: zabbix_host_check.json.result | length > 0
 
     - name: Create new host in Zabbix
       uri:
