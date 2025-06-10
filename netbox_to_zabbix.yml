@@ -133,6 +133,9 @@
     - name: Set Zabbix host status based on device status
       set_fact:
         zabbix_host_status: "{{ 0 if status == 'active' else 1 }}"
+    
+      -debug:
+        msg: "Host: {{ inventory_hostname }} | status: {{ status }} | type: {{ status | type_debug }}"
 
     - name: Show computed zabbix_tags
       debug:
