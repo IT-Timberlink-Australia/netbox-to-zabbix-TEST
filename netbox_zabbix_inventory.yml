@@ -13,7 +13,7 @@ compose:
   tags: "tags | map(attribute='name') | list"
   description: "description"
 query_filters:
-  - status: ['active', 'staged']
+  - status: "active,staged"
   - cf_mon_required: 'true'
   - has_primary_ip: 'true'
 group_by:
