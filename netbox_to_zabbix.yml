@@ -15,8 +15,7 @@
           Description: "{{ description | default('Not provided') }}"
           Site ID: {{ site_id }}
           Site Slug: {{ site_slug }}
-          Template Name: {{ zabbix_template_name }}
-      # run_once: true   # <-- Remove to see info for each host
+          Template Name: {{ zabbix_template_name }}"
 
     - name: Ensure Zabbix template name is defined
       assert:
@@ -80,8 +79,6 @@
             "type": 3, "main": 1, "useip": 1, "ip": "{{ ansible_host }}", "dns": "", "port": "623"
           } ]
           {% endif %}
-      # "type": 1 is Zabbix Agent, 2 is SNMP, 3 is IPMI
-      # Zabbix Agent default port is 10050, SNMP is 161, IPMI is 623
 
     - name: Get existing host from Zabbix
       uri:
@@ -156,14 +153,8 @@
                 {"templateid": template_id }
               ]
             }
-            | combine(
-                (proxy_id is defined and (proxy_id | string | length > 0)) | ternary({"proxy_hostid": proxy_id | string}, {}),
-                recursive=True
-              )
-            | combine(
-                (zabbix_tags | length > 0) | ternary({"tags": zabbix_tags}, {}),
-                recursive=True
-              )
+            | combine((proxy_id | length > 0) | ternary({"proxy_hostid": proxy_id}, {}), recursive=True)
+            | combine((zabbix_tags | length > 0) | ternary({"tags": zabbix_tags}, {}), recursive=True)
           }}
       when: zabbix_host_check.json.result | length == 0
 
@@ -181,16 +172,18 @@
                 {"templateid": template_id }
               ]
             }
-            | combine(
-                (proxy_id is defined and (proxy_id | string | length > 0)) | ternary({"proxy_hostid": proxy_id | string}, {}),
-                recursive=True
-              )
-            | combine(
-                (zabbix_tags | length > 0) | ternary({"tags": zabbix_tags}, {}),
-                recursive=True
-              )
+            | combine((proxy_id | length > 0) | ternary({"proxy_hostid": proxy_id}, {}), recursive=True)
+            | combine((zabbix_tags | length > 0) | ternary({"tags": zabbix_tags}, {}), recursive=True)
           }}
-        when: zabbix_host_check.json.result | length > 0
+      when:
+        - zabbix_host_check.json is defined
+        - zabbix_host_check.json.result is defined
+        - zabbix_host_check.json.result | length > 0
+
+    - name: Skip update if host doesn't exist
+      debug:
+        msg: "Skipping update: Host '{{ inventory_hostname }}' not found in Zabbix."
+      when: zabbix_host_check.json.result | length == 0
 
     - name: Create new host in Zabbix
       uri:
@@ -207,7 +200,6 @@
           id: 1
         validate_certs: no
       delegate_to: localhost
-      register: host_creation
       when: zabbix_host_check.json.result | length == 0
 
     - name: Update existing host in Zabbix
@@ -225,5 +217,4 @@
           id: 1
         validate_certs: no
       delegate_to: localhost
-      register: host_update
       when: zabbix_host_check.json.result | length > 0
