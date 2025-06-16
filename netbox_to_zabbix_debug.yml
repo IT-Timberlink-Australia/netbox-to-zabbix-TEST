@@ -140,6 +140,13 @@
           {% else %}
             '1'
           {% endif %}
+    
+    - debug:
+        msg: "Host: {{ inventory_hostname }} | status: {{ status }} | type: {{ status | type_debug }}"
+
+    - name: Show computed zabbix_tags
+      debug:
+        var: zabbix_tags
 
     - name: Build Zabbix host create params
       set_fact:
@@ -227,3 +234,21 @@
       delegate_to: localhost
       register: host_update
       when: zabbix_host_check.json.result | length > 0
+
+    - name: Show sync result
+      debug:
+        msg: |
+          Zabbix Sync Result for {{ inventory_hostname }}:
+          {% if zabbix_host_check.json.result | length > 0 %}
+          Action: Update
+          Status: {{ 'Success' if host_update is defined and not host_update.failed else 'Failed' }}
+          Response: {{ host_update.json | default('No response') }}
+          {% else %}
+          Action: Create
+          Status: {{ 'Success' if host_creation is defined and not host_creation.failed else 'Failed' }}
+          Response: {{ host_creation.json | default('No response') }}
+          {% endif %}
+          Visible Name: "{{ visible_name }}"
+          Interface Type: {{ 'SNMP v2' if 'snmp' in zabbix_template_name | lower else 'IPMI' }}
+          Template ID: {{ template_id }}
+          Proxy ID: {{ proxy_id }}
