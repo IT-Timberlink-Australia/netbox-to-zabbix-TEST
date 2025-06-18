@@ -16,6 +16,8 @@ query_filters:
   - status__in: active,staged
   - cf_mon_required: 'true'
   - has_primary_ip: 'true'
+  - cf_zabbix_template_name__isnull: 'false'
+  - cf_zabbix_template_name__empty: 'false'
 group_by:
   - sites
   - device_roles
