@@ -3,8 +3,8 @@ validate_certs: false
 config_context: true
 flatten_custom_fields: true
 compose:
-  ansible_network_os: platform.slug
-  ansible_host: "primary_ip.address.split('/')[0]"
+  ansible_network_os: "platform.slug | default('unknown')"
+  ansible_host: "primary_ip.address.split('/')[0] | default('0.0.0.0')"
   site_id: "site.id"
   site_slug: "site.slug"
   site_name: "site.name"
@@ -16,8 +16,6 @@ query_filters:
   - status__in: active,staged
   - cf_mon_required: 'true'
   - has_primary_ip: 'true'
-  - cf_zabbix_template_name__isnull: 'false'
-  - cf_zabbix_template_name__empty: 'false'
 group_by:
   - sites
   - device_roles
