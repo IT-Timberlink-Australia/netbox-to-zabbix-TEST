@@ -111,23 +111,51 @@
     - name: Set Zabbix host tags based on device role, site, and NetBox status
       set_fact:
         zabbix_tags: >-
-          {%- set tags = [] -%}
-          {%- for role in device_roles | default([]) -%}
-            {%- set normrole = role | lower -%}
-            {%- if 'switch-core' in normrole -%}
-              {%- set _ = tags.append({"tag": "device", "value": "switch core"}) -%}
-            {%- elif 'switch-edge' in normrole -%}
-              {%- set _ = tags.append({"tag": "device", "value": "switch edge"}) -%}
-            {%- endif -%}
-          {%- endfor -%}
-          {%- if (site_id | int) == 2 -%}
-            {%- set _ = tags.append({"tag": "site", "value": "tar"}) -%}
-          {%- elif (site_id | int) == 1 -%}
-            {%- set _ = tags.append({"tag": "site", "value": "bel"}) -%}
-          {%- endif -%}
-          {%- set nbstat = status.value if status is mapping and status.value is defined else status -%}
-          {%- set _ = tags.append({"tag": "nb_status", "value": nbstat }) -%}
-          {{ tags }}
+              {%- set tags = [] -%}
+
+              {# Device Role Tags #}
+              {%- set has_role_tag = false -%}
+              {%- for role in device_roles | default([]) -%}
+                {%- set normrole = role | lower -%}
+                {%- if 'switch-core' in normrole -%}
+                  {%- set _ = tags.append({"tag": "device", "value": "switch core"}) -%}
+                  {%- set has_role_tag = true -%}
+                {%- elif 'switch-edge' in normrole -%}
+                  {%- set _ = tags.append({"tag": "device", "value": "switch edge"}) -%}
+                  {%- set has_role_tag = true -%}
+                {%- elif 'ups' in normrole -%}
+                  {%- set _ = tags.append({"tag": "device", "value": "ups"}) -%}
+                  {%- set has_role_tag = true -%}
+                {%- endif -%}
+              {%- endfor -%}
+              {%- if not has_role_tag -%}
+                {%- set _ = tags.append({"tag": "device", "value": "unknown"}) -%}
+              {%- endif -%}
+
+              {# Manufacturer Tag from platform slug #}
+              {%- if platform is defined -%}
+                {%- set plat = platform | lower -%}
+                {%- if 'apc' in plat -%}
+                  {%- set _ = tags.append({"tag": "manufacturer", "value": "apc"}) -%}
+                {%- elif 'eaton' in plat -%}
+                  {%- set _ = tags.append({"tag": "manufacturer", "value": "eaton"}) -%}
+                {%- elif 'aoscx' in plat -%}
+                  {%- set _ = tags.append({"tag": "manufacturer", "value": "aruba"}) -%}
+                {%- elif 'cisco' in plat -%}
+                  {%- set _ = tags.append({"tag": "manufacturer", "value": "cisco"}) -%}
+                {%- endif -%}
+              {%- endif -%}
+
+              {# Site Tag #}
+              {%- if site_slug is defined -%}
+                {%- set _ = tags.append({"tag": "site", "value": site_slug | lower}) -%}
+              {%- endif -%}
+
+              {# NetBox Status Tag #}
+              {%- set nbstat = status.value if status is mapping and status.value is defined else status -%}
+              {%- set _ = tags.append({"tag": "nb_status", "value": nbstat }) -%}
+
+              {{ tags }}
 
     - name: Set Zabbix host status based on device status
       set_fact:
