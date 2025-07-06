@@ -111,51 +111,49 @@
     - name: Set Zabbix host tags based on device role, site, and NetBox status
       set_fact:
         zabbix_tags: >-
-              {%- set tags = [] -%}
+          {%- set tags = [] -%}
 
-              {# Device Role Tags #}
-              {%- set has_role_tag = false -%}
-              {%- for role in device_roles | default([]) -%}
-                {%- set normrole = role | lower -%}
-                {%- if 'switch-core' in normrole -%}
-                  {%- set _ = tags.append({"tag": "device", "value": "switch core"}) -%}
-                  {%- set has_role_tag = true -%}
-                {%- elif 'switch-edge' in normrole -%}
-                  {%- set _ = tags.append({"tag": "device", "value": "switch edge"}) -%}
-                  {%- set has_role_tag = true -%}
-                {%- elif 'ups' in normrole -%}
-                  {%- set _ = tags.append({"tag": "device", "value": "ups"}) -%}
-                  {%- set has_role_tag = true -%}
-                {%- endif -%}
-              {%- endfor -%}
-              {%- if not has_role_tag -%}
-                {%- set _ = tags.append({"tag": "device", "value": "unknown"}) -%}
-              {%- endif -%}
+          {# Device Role Tags #}
+          {%- for role in device_roles | default([]) -%}
+            {%- set normrole = role | lower -%}
+            {%- if 'switch-core' in normrole -%}
+              {%- set _ = tags.append({"tag": "device", "value": "switch core"}) -%}
+            {%- elif 'switch-edge' in normrole -%}
+              {%- set _ = tags.append({"tag": "device", "value": "switch edge"}) -%}
+            {%- elif 'ups' in normrole -%}
+              {%- set _ = tags.append({"tag": "device", "value": "ups"}) -%}
+            {%- endif -%}
+          {%- endfor -%}
 
-              {# Manufacturer Tag from platform slug #}
-              {%- if platform is defined -%}
-                {%- set plat = platform | lower -%}
-                {%- if 'apc' in plat -%}
-                  {%- set _ = tags.append({"tag": "manufacturer", "value": "apc"}) -%}
-                {%- elif 'eaton' in plat -%}
-                  {%- set _ = tags.append({"tag": "manufacturer", "value": "eaton"}) -%}
-                {%- elif 'aoscx' in plat -%}
-                  {%- set _ = tags.append({"tag": "manufacturer", "value": "aruba"}) -%}
-                {%- elif 'cisco' in plat -%}
-                  {%- set _ = tags.append({"tag": "manufacturer", "value": "cisco"}) -%}
-                {%- endif -%}
-              {%- endif -%}
+          {# If no device tag was added, set as unknown #}
+          {%- if tags | selectattr('tag', 'equalto', 'device') | list | length == 0 -%}
+            {%- set _ = tags.append({"tag": "device", "value": "unknown"}) -%}
+          {%- endif -%}
 
-              {# Site Tag #}
-              {%- if site_slug is defined -%}
-                {%- set _ = tags.append({"tag": "site", "value": site_slug | lower}) -%}
-              {%- endif -%}
+          {# Manufacturer Tag from platform slug #}
+          {%- if platform is defined -%}
+            {%- set plat = platform | lower -%}
+            {%- if 'apc' in plat -%}
+              {%- set _ = tags.append({"tag": "manufacturer", "value": "apc"}) -%}
+            {%- elif 'eaton' in plat -%}
+              {%- set _ = tags.append({"tag": "manufacturer", "value": "eaton"}) -%}
+            {%- elif 'aoscx' in plat -%}
+              {%- set _ = tags.append({"tag": "manufacturer", "value": "aruba"}) -%}
+            {%- elif 'cisco' in plat -%}
+              {%- set _ = tags.append({"tag": "manufacturer", "value": "cisco"}) -%}
+            {%- endif -%}
+          {%- endif -%}
 
-              {# NetBox Status Tag #}
-              {%- set nbstat = status.value if status is mapping and status.value is defined else status -%}
-              {%- set _ = tags.append({"tag": "nb_status", "value": nbstat }) -%}
+          {# Site Tag #}
+          {%- if site_slug is defined -%}
+            {%- set _ = tags.append({"tag": "site", "value": site_slug | lower}) -%}
+          {%- endif -%}
 
-              {{ tags }}
+          {# NetBox Status Tag #}
+          {%- set nbstat = status.value if status is mapping and status.value is defined else status -%}
+          {%- set _ = tags.append({"tag": "nb_status", "value": nbstat }) -%}
+
+          {{ tags }}
 
     - name: Set Zabbix host status based on device status
       set_fact:
