@@ -135,7 +135,7 @@
             {%- set plat = platform | lower -%}
             {%- if 'apc' in plat -%}
               {%- set _ = tags.append({"tag": "manufacturer", "value": "apc"}) -%}
-            {%- elif 'eaton' in plat -%}
+            {%- elif 'eaton_webos' in plat -%}
               {%- set _ = tags.append({"tag": "manufacturer", "value": "eaton"}) -%}
             {%- elif 'aoscx' in plat -%}
               {%- set _ = tags.append({"tag": "manufacturer", "value": "aruba"}) -%}
