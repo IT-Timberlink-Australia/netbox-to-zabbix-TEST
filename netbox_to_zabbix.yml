@@ -131,17 +131,15 @@
           {%- endif -%}
 
           {# Manufacturer Tag from platform slug #}
-          {%- if platform is defined -%}
-            {%- set plat = platform | lower -%}
-            {%- if 'apc' in plat -%}
-              {%- set _ = tags.append({"tag": "manufacturer", "value": "apc"}) -%}
-            {%- elif 'eaton_webos' in plat -%}
-              {%- set _ = tags.append({"tag": "manufacturer", "value": "eaton"}) -%}
-            {%- elif 'aoscx' in plat -%}
-              {%- set _ = tags.append({"tag": "manufacturer", "value": "aruba"}) -%}
-            {%- elif 'cisco' in plat -%}
-              {%- set _ = tags.append({"tag": "manufacturer", "value": "cisco"}) -%}
-            {%- endif -%}
+          {%- set plat = platform.slug | default('') | lower | trim -%}
+          {%- if 'apc' in plat -%}
+            {%- set _ = tags.append({"tag": "manufacturer", "value": "apc"}) -%}
+          {%- elif 'eaton' in plat -%}
+            {%- set _ = tags.append({"tag": "manufacturer", "value": "eaton"}) -%}
+          {%- elif 'aoscx' in plat -%}
+            {%- set _ = tags.append({"tag": "manufacturer", "value": "aruba"}) -%}
+          {%- elif 'cisco' in plat -%}
+            {%- set _ = tags.append({"tag": "manufacturer", "value": "cisco"}) -%}
           {%- endif -%}
 
           {# Site Tag #}
