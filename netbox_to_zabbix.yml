@@ -137,9 +137,9 @@
           {# Manufacturer Tag from platform #}
           {%- if platform is defined and platform is not none %}
             {%- set plat = platform | lower %}
-            {%- if 'apc_webos' in plat -%}
+            {%- if 'apc' in plat -%}
               {%- set _ = tags.append({"tag": "manufacturer", "value": "apc"}) -%}
-            {%- elif 'eaton_webos' in plat -%}
+            {%- elif 'eaton' in plat -%}
               {%- set _ = tags.append({"tag": "manufacturer", "value": "eaton"}) -%}
             {%- elif 'aoscx' in plat -%}
               {%- set _ = tags.append({"tag": "manufacturer", "value": "aruba"}) -%}
