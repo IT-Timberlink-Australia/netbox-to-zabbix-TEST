@@ -108,16 +108,18 @@
       set_fact:
         visible_name: "{{ inventory_hostname }}{% if description is defined and description|length > 0 %} - {{ description | trim }}{% endif %}"
 
-    - name: Build device role to SLA code mapping
+    - name: Initialize device_role_map
       set_fact:
-        device_role_map: >-
-          {{
-            dict(
-              (item.slug | lower, item.custom_fields.sla_report_code)
-              for item in netbox_device_roles
-              if item.custom_fields.sla_report_code is defined and item.custom_fields.sla_report_code | length > 0
-            )
-          }}
+        device_role_map: {}
+
+    - name: Add each device role mapping
+      set_fact:
+        device_role_map: "{{ device_role_map | combine({ item.slug | lower: item.custom_fields.sla_report_code }) }}"
+      loop: "{{ netbox_device_roles }}"
+      when:
+        - item.custom_fields.sla_report_code is defined
+        - item.custom_fields.sla_report_code | length > 0
+
 
     - name: Set Zabbix host tags based on device role, site, and NetBox status
       set_fact:
