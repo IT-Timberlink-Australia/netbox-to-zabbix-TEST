@@ -134,8 +134,8 @@
             {%- set _ = tags.append({"tag": "device", "value": "unknown"}) -%}
           {%- endif -%}
 
-          {# Manufacturer Tag from platform #}
-          {%- if nsible_network_os is defined and nsible_network_os is not none %}
+          {# Manufacturer Tag from ansible_network_os #}
+          {%- if ansible_network_os is defined and ansible_network_os is not none %}
             {%- set plat = ansible_network_os | lower %}
             {%- if 'apc' in plat -%}
               {%- set _ = tags.append({"tag": "manufacturer", "value": "apc"}) -%}
