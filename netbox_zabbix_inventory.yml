@@ -12,7 +12,7 @@ compose:
   device_role: "device_role.name"
   tags: "tags | map(attribute='name') | list"
   description: "description"
-  sla_report_code: "cf_sla_report_code | default('')"
+  device_role_sla_report_code: "cf_sla_report_code | default('')"
 query_filters:
   - status__in: active,staged
   - cf_mon_required: 'true'
