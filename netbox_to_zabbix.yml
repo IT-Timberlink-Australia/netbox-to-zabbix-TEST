@@ -108,26 +108,34 @@
       set_fact:
         visible_name: "{{ inventory_hostname }}{% if description is defined and description|length > 0 %} - {{ description | trim }}{% endif %}"
 
-    - name: Debug platform slug
-      debug:
-        msg: "DEBUG PLATFORM SLUG: {{ ansible_network_os | lower }}"
+    - name: Build device role to SLA code mapping
+      set_fact:
+        device_role_map: >-
+          {{
+            dict(
+              (item.slug | lower, item.custom_fields.sla_report_code)
+              for item in netbox_device_roles
+              if item.custom_fields.sla_report_code is defined and item.custom_fields.sla_report_code | length > 0
+            )
+          }}
 
     - name: Set Zabbix host tags based on device role, site, and NetBox status
       set_fact:
         zabbix_tags: >-
           {%- set tags = [] -%}
 
-          {# Device Role Tags #}
+          {%- set found_role_tag = false -%}
           {%- for role in device_roles | default([]) -%}
-            {%- set normrole = role | lower -%}
-            {%- if 'switch-core' in normrole -%}
-              {%- set _ = tags.append({"tag": "device", "value": "switch core"}) -%}
-            {%- elif 'switch-edge' in normrole -%}
-              {%- set _ = tags.append({"tag": "device", "value": "switch edge"}) -%}
-            {%- elif 'uninterruptible-power-supply' in normrole -%}
-              {%- set _ = tags.append({"tag": "device", "value": "ups"}) -%}
+            {%- set normrole = role | lower | trim -%}
+            {%- if device_role_map[normrole] is defined -%}
+              {%- set _ = tags.append({"tag": "device", "value": device_role_map[normrole]}) -%}
+              {%- set found_role_tag = true -%}
             {%- endif -%}
           {%- endfor -%}
+          {%- if not found_role_tag -%}
+            {%- set _ = tags.append({"tag": "device", "value": "unknown"}) -%}
+          {%- endif -%}
+
 
           {# If no device tag was added, set as unknown #}
           {%- if tags | selectattr('tag', 'equalto', 'device') | list | length == 0 -%}
