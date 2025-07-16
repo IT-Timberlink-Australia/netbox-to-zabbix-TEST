@@ -109,12 +109,12 @@
         visible_name: "{{ inventory_hostname }}{% if description is defined and description|length > 0 %} - {{ description | trim }}{% endif %}"
 
     - name: Debug mapping for device
-        debug:
-          msg:
-            - "device_roles: {{ device_roles }}"
-            - "device_role_map: {{ device_role_map }}"
-            - "device_roles (first) value: {{ device_roles[0] | lower | trim }}"
-            - "Mapped code: {{ device_role_map[device_roles[0] | lower | trim] | default('NOT FOUND') }}"
+      debug:
+        msg:
+          - "device_roles: {{ device_roles }}"
+          - "device_role_map: {{ device_role_map }}"
+          - "device_roles (first) value: {{ device_roles[0] | lower | trim }}"
+          - "Mapped code: {{ device_role_map[device_roles[0] | lower | trim] | default('NOT FOUND') }}"
 
     - name: Initialize device_role_map
       set_fact:
