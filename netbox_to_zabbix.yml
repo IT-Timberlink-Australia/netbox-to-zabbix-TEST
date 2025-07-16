@@ -110,7 +110,7 @@
 
     - name: Debug platform slug
       debug:
-        msg: "DEBUG PLATFORM SLUG: {{ nsible_network_os | lower }}"
+        msg: "DEBUG PLATFORM SLUG: {{ ansible_network_os | lower }}"
 
     - name: Set Zabbix host tags based on device role, site, and NetBox status
       set_fact:
