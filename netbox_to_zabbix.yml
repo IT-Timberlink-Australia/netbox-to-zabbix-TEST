@@ -120,7 +120,7 @@
               {%- set _ = tags.append({"tag": "device", "value": "switch core"}) -%}
             {%- elif 'switch-edge' in normrole -%}
               {%- set _ = tags.append({"tag": "device", "value": "switch edge"}) -%}
-            {%- elif 'ups' in normrole -%}
+            {%- elif 'uninterruptible-power-supply' in normrole -%}
               {%- set _ = tags.append({"tag": "device", "value": "ups"}) -%}
             {%- endif -%}
           {%- endfor -%}
