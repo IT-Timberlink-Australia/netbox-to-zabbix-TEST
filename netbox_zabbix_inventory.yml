@@ -22,3 +22,7 @@ group_by:
   - sites
   - device_roles
   - platforms
+
+  - name: Show full device facts
+    debug:
+      var: hostvars[inventory_hostname]
