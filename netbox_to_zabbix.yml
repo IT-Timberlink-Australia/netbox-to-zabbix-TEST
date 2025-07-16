@@ -132,9 +132,9 @@
 
           {# Manufacturer Tag from platform slug #}
           {%- set plat = platform.slug | default('') | lower | trim -%}
-          {%- if 'apc' in plat -%}
+          {%- if 'apc_webos' in plat -%}
             {%- set _ = tags.append({"tag": "manufacturer", "value": "apc"}) -%}
-          {%- elif 'eaton' in plat -%}
+          {%- elif 'eaton_webos' in plat -%}
             {%- set _ = tags.append({"tag": "manufacturer", "value": "eaton"}) -%}
           {%- elif 'aoscx' in plat -%}
             {%- set _ = tags.append({"tag": "manufacturer", "value": "aruba"}) -%}
