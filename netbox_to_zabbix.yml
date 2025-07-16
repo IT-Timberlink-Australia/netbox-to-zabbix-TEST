@@ -108,6 +108,10 @@
       set_fact:
         visible_name: "{{ inventory_hostname }}{% if description is defined and description|length > 0 %} - {{ description | trim }}{% endif %}"
 
+    - name: Debug platform slug
+      debug:
+        msg: "DEBUG PLATFORM SLUG: {{ platform.slug | lower }}"
+
     - name: Set Zabbix host tags based on device role, site, and NetBox status
       set_fact:
         zabbix_tags: >-
