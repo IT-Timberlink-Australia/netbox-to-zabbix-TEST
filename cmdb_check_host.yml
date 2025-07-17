@@ -29,15 +29,13 @@
 
     - name: Prepare tag update info for each host (preserve unrelated tags)
       set_fact:
-        zabbix_tag_updates: >-
-          {{
-            zabbix_hosts.json.result | map('combine', {
-              'cmdb_value': (
-                (item.host | lower) in inventory_hosts_lc | ternary('true', 'false')
-              ),
-              'existing_tags': (item.tags | default([]) | rejectattr('tag', 'equalto', 'cmdb') | list)
-            }) | list
-          }}
+        zabbix_tag_updates: "{{ zabbix_tag_updates | default([]) + [ {
+          'hostid': item.hostid,
+          'host': item.host,
+          'existing_tags': (item.tags | default([]) | rejectattr('tag', 'equalto', 'cmdb') | list),
+          'cmdb_value': ((item.host | lower) in inventory_hosts_lc | ternary('true', 'false'))
+        } ] }}"
+      loop: "{{ zabbix_hosts.json.result }}"
 
     - name: Update Zabbix hosts with cmdb tag (preserve unrelated tags)
       uri:
