@@ -108,19 +108,23 @@
       set_fact:
         visible_name: "{{ inventory_hostname }}{% if description is defined and description|length > 0 %} - {{ description | trim }}{% endif %}"
 
-    - name: Get all NetBox device roles
-      netbox.netbox.netbox_device_role:
-        netbox_url: "{{ lookup('env', 'NETBOX_API') }}"
-        netbox_token: "{{ lookup('env', 'NETBOX_TOKEN') }}"
+    - name: Get all NetBox device roles via API
+      uri:
+        url: "{{ lookup('env', 'NETBOX_API') }}/api/dcim/device-roles/?limit=1000"
+        headers:
+          Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
+          Accept: "application/json"
         validate_certs: false
-        query: {}
-      register: nb_device_roles
+        method: GET
+      register: nb_device_roles_api
       delegate_to: localhost
       run_once: true
 
     - name: Set netbox_device_roles fact
       set_fact:
-        netbox_device_roles: "{{ nb_device_roles.results }}"
+        netbox_device_roles: "{{ nb_device_roles_api.json.results }}"
+      delegate_to: localhost
+      run_once: true
 
     - name: Initialize device_role_map
       set_fact:
