@@ -1,5 +1,5 @@
 ---
-- name: Compare AWX Inventory with Zabbix and tag hosts
+- name: Compare AWX Inventory with Zabbix and tag hosts, preserving existing tags
   hosts: localhost
   gather_facts: false
   vars:
@@ -23,21 +23,23 @@
         validate_certs: false
       register: zabbix_hosts
 
-    - name: Get list of AWX inventory hosts
-      add_host:
-        name: "{{ item }}"
-      loop: "{{ groups['all'] }}"
-      when: item != 'localhost'
-
     - name: Set list of inventory hostnames (lowercase, no localhost)
       set_fact:
         inventory_hosts_lc: "{{ groups['all'] | difference(['localhost']) | map('lower') | list }}"
 
+    - name: Prepare Zabbix host tag updates (preserve existing tags)
+      set_fact:
+        zabbix_tag_updates: >-
+          {{
+            zabbix_hosts.json.result | map('combine', {
+              'cmdb_value': (
+                (item.host | lower) in inventory_hosts_lc | ternary('true', 'false')
+              ),
+              'existing_tags': (item.tags | default([]) | rejectattr('tag', 'equalto', 'cmdb') | list)
+            }) | list
+          }}
+
     - name: Tag Zabbix hosts with cmdb status (preserve existing tags)
-      vars:
-        cmdb_value: "{{ 'true' if (item.host | lower) in inventory_hosts_lc else 'false' }}"
-        existing_tags: "{{ item.tags | rejectattr('tag', 'equalto', 'cmdb') | list }}"
-        updated_tags: "{{ existing_tags + [ { 'tag': 'cmdb', 'value': cmdb_value } ] }}"
       uri:
         url: "{{ zabbix_api_url }}"
         method: POST
@@ -49,11 +51,10 @@
           method: "host.update"
           params:
             hostid: "{{ item.hostid }}"
-            tags: "{{ updated_tags }}"
+            tags: "{{ item.existing_tags + [ { 'tag': 'cmdb', 'value': item.cmdb_value } ] }}"
           auth: "{{ zabbix_api_token }}"
           id: 1
         validate_certs: false
-      loop: "{{ zabbix_hosts.json.result }}"
+      loop: "{{ zabbix_tag_updates }}"
       loop_control:
         label: "{{ item.host }}"
-
