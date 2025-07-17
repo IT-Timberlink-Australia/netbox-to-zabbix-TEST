@@ -138,13 +138,13 @@
         - item.custom_fields.sla_report_code is defined
         - item.custom_fields.sla_report_code | length > 0
 
-    - name: Debug mapping for device
-      debug:
-        msg:
-          - "device_roles: {{ device_roles }}"
-          - "device_role_map: {{ device_role_map }}"
-          - "device_roles (first) value: {{ device_roles[0] | lower | trim }}"
-          - "Mapped code: {{ device_role_map[device_roles[0] | lower | trim] | default('NOT FOUND') }}"
+#   - name: Debug mapping for device
+#     debug:
+#       msg:
+#         - "device_roles: {{ device_roles }}"
+#        - "device_role_map: {{ device_role_map }}"
+#        - "device_roles (first) value: {{ device_roles[0] | lower | trim }}"
+#        - "Mapped code: {{ device_role_map[device_roles[0] | lower | trim] | default('NOT FOUND') }}"
 
     - name: Set Zabbix host tags based on device role, site, and NetBox status
       set_fact:
