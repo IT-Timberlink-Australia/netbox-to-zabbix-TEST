@@ -108,6 +108,15 @@
       set_fact:
         visible_name: "{{ inventory_hostname }}{% if description is defined and description|length > 0 %} - {{ description | trim }}{% endif %}"
 
+    - name: Get all NetBox device roles
+      netbox.netbox.netbox_device_role:
+        netbox_url: "{{ netbox_url }}"
+        netbox_token: "{{ netbox_token }}"
+        validate_certs: false
+      register: nb_device_roles
+      delegate_to: localhost
+      run_once: true
+   
     - name: Set netbox_device_roles fact
       set_fact:
         netbox_device_roles: "{{ nb_device_roles.results }}"
