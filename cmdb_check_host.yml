@@ -33,7 +33,7 @@
           'hostid': item.hostid,
           'host': item.host,
           'existing_tags': (item.tags | default([]) | rejectattr('tag', 'equalto', 'cmdb') | list),
-          'cmdb_value': ((item.host | lower) in inventory_hosts_lc | ternary('true', 'false'))
+          'cmdb_value': (((item.host | lower) in inventory_hosts_lc) | ternary('true', 'false') | string)
         } ] }}"
       loop: "{{ zabbix_hosts.json.result }}"
 
