@@ -113,6 +113,7 @@
         netbox_url: "{{ lookup('env', 'NETBOX_API') }}"
         netbox_token: "{{ lookup('env', 'NETBOX_TOKEN') }}"
         validate_certs: false
+        data: {}
       register: nb_device_roles
       delegate_to: localhost
       run_once: true
