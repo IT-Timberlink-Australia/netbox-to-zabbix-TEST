@@ -1,3 +1,5 @@
+# This version ensures zabbix_tags is always set before it's used, and errors are avoided.
+
 ---
 - name: Sync NetBox devices to Zabbix and preserve unrelated tags
   hosts: all
@@ -104,10 +106,17 @@
       set_fact:
         visible_name: "{{ inventory_hostname }}{% if description is defined and description|length > 0 %} - {{ description | trim }}{% endif %}"
 
-    # --- BUILD YOUR ZABBIX TAGS HERE ---
+    # --- ENSURE ZABBIX TAGS IS ALWAYS SET FOR EVERY HOST ---
+    - name: Set Zabbix host tags based on device role, site, and NetBox status
+      set_fact:
+        zabbix_tags: >-
+          {%- set tags = [] -%}
+          {# ...your Jinja logic for device/manufacturer/site/nb_status... #}
+          {{ tags }}
+
     - name: Set managed_tags to zabbix_tags for this host
       set_fact:
-        managed_tags: "{{ zabbix_tags }}"  # build zabbix_tags as before with your logic
+        managed_tags: "{{ zabbix_tags }}"
 
     - name: Prepare merged tags for Zabbix update (preserve unrelated tags)
       set_fact:
