@@ -1,5 +1,5 @@
 ---
-- name: Compare AWX Inventory with Zabbix and tag hosts, preserving existing tags
+- name: Compare AWX Inventory with Zabbix and tag hosts (preserve unrelated tags)
   hosts: localhost
   gather_facts: false
   vars:
@@ -27,7 +27,7 @@
       set_fact:
         inventory_hosts_lc: "{{ groups['all'] | difference(['localhost']) | map('lower') | list }}"
 
-    - name: Prepare Zabbix host tag updates (preserve existing tags)
+    - name: Prepare tag update info for each host (preserve unrelated tags)
       set_fact:
         zabbix_tag_updates: >-
           {{
@@ -39,7 +39,7 @@
             }) | list
           }}
 
-    - name: Tag Zabbix hosts with cmdb status (preserve existing tags)
+    - name: Update Zabbix hosts with cmdb tag (preserve unrelated tags)
       uri:
         url: "{{ zabbix_api_url }}"
         method: POST
