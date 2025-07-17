@@ -110,7 +110,12 @@
       set_fact:
         zabbix_tags: >-
           {%- set tags = [] -%}
-          # ... your tag build logic ...
+          {%- if device_roles is defined and device_roles|length > 0 -%}
+            {%- for role in device_roles -%}
+              {%- set _ = tags.append({'tag': 'device', 'value': role}) -%}
+            {%- endfor -%}
+          {%- endif -%}
+          {%- set _ = tags.append({'tag': 'site', 'value': site_slug | lower }) -%}
           {{ tags }}
 
     - name: Ensure managed_tags is always a list
