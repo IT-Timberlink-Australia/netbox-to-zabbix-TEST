@@ -110,22 +110,31 @@
       set_fact:
         zabbix_tags: >-
           {%- set tags = [] -%}
-          {# ...your Jinja logic for device/manufacturer/site/nb_status... #}
+          # ... your tag build logic ...
           {{ tags }}
 
     - name: Ensure managed_tags is always a list
       set_fact:
-        managed_tags: "{{ zabbix_tags if zabbix_tags is sequence else [zabbix_tags] }}"
+        managed_tags: >-
+          {% if zabbix_tags is sequence and zabbix_tags is not string %}
+            {{ zabbix_tags }}
+          {% else %}
+            [ zabbix_tags ]
+          {% endif %}
+
+    - name: Ensure existing_tags is always a list
+      set_fact:
+        existing_tags: >-
+          {{
+            (zabbix_host_check.json.result[0].tags | default([]))
+            | rejectattr('tag', 'in', managed_tags | map(attribute='tag') | list)
+            | list
+          }}
+      when: zabbix_host_check.json.result | length > 0
 
     - name: Prepare merged tags for Zabbix update (preserve unrelated tags)
       set_fact:
-        merged_tags: >-
-          {{
-            (
-              zabbix_host_check.json.result[0].tags | default([])
-              | rejectattr('tag', 'in', managed_tags | map(attribute='tag') | list) | list
-            ) + managed_tags
-          }}
+        merged_tags: "{{ existing_tags + managed_tags }}"
       when: zabbix_host_check.json.result | length > 0
 
     - name: Build Zabbix host update params with merged tags
