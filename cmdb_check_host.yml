@@ -49,7 +49,7 @@
           method: "host.update"
           params:
             hostid: "{{ item.hostid }}"
-            tags: "{{ item.existing_tags + [ { 'tag': 'cmdb', 'value': item.cmdb_value } ] }}"
+            tags: "{{ item.existing_tags + [ { 'tag': 'cmdb', 'value': item.cmdb_value | string } ] }}"
           auth: "{{ zabbix_api_token }}"
           id: 1
         validate_certs: false
