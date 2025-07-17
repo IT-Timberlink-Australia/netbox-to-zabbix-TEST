@@ -150,19 +150,12 @@
       set_fact:
         zabbix_tags: >-
           {%- set tags = [] -%}
-
-          {%- set found_role_tag = false -%}
           {%- for role in device_roles | default([]) -%}
             {%- set normrole = role | lower | trim -%}
             {%- if device_role_map[normrole] is defined -%}
               {%- set _ = tags.append({"tag": "device", "value": device_role_map[normrole]}) -%}
-              {%- set found_role_tag = true -%}
             {%- endif -%}
           {%- endfor -%}
-          {%- if not found_role_tag -%}
-            {%- set _ = tags.append({"tag": "device", "value": "unknown"}) -%}
-          {%- endif -%}
-
 
           {# If no device tag was added, set as unknown #}
           {%- if tags | selectattr('tag', 'equalto', 'device') | list | length == 0 -%}
