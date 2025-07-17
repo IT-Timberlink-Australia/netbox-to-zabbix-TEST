@@ -1,5 +1,5 @@
 ---
-- name: Compare AWX Inventory with Zabbix and tag hosts (preserve unrelated tags)
+- name: Compare AWX Inventory with Zabbix and safely update cmdb tag
   hosts: localhost
   gather_facts: false
   vars:
@@ -32,7 +32,13 @@
         zabbix_tag_updates: "{{ zabbix_tag_updates | default([]) + [ {
           'hostid': item.hostid,
           'host': item.host,
-          'existing_tags': (item.tags | default([]) | rejectattr('tag', 'equalto', 'cmdb') | list),
+          'existing_tags': (
+            item.tags is defined and item.tags is sequence and item.tags is not string
+              | ternary(
+                  item.tags | rejectattr('tag', 'equalto', 'cmdb') | list,
+                  []
+                )
+          ),
           'cmdb_value': (((item.host | lower) in inventory_hosts_lc) | ternary('true', 'false') | string)
         } ] }}"
       loop: "{{ zabbix_hosts.json.result }}"
@@ -49,7 +55,7 @@
           method: "host.update"
           params:
             hostid: "{{ item.hostid }}"
-            tags: "{{ item.existing_tags + [ { 'tag': 'cmdb', 'value': item.cmdb_value | string } ] }}"
+            tags: "{{ (item.existing_tags if item.existing_tags is sequence and item.existing_tags is not string else []) + [ { 'tag': 'cmdb', 'value': item.cmdb_value | string } ] }}"
           auth: "{{ zabbix_api_token }}"
           id: 1
         validate_certs: false
