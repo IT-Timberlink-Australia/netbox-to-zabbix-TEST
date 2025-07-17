@@ -116,11 +116,7 @@
     - name: Ensure managed_tags is always a list
       set_fact:
         managed_tags: >-
-          {% if zabbix_tags is sequence and zabbix_tags is not string %}
-            {{ zabbix_tags }}
-          {% else %}
-            [ zabbix_tags ]
-          {% endif %}
+          {{ zabbix_tags if zabbix_tags is sequence and zabbix_tags is not string else [zabbix_tags] }}
 
     - name: Ensure existing_tags is always a list
       set_fact:
@@ -132,9 +128,17 @@
           }}
       when: zabbix_host_check.json.result | length > 0
 
+    - name: Listify managed_tags and existing_tags (safe for all cases)
+      set_fact:
+        managed_tags_safe: >-
+          {{ managed_tags if managed_tags is sequence and managed_tags is not string else [managed_tags] }}
+        existing_tags_safe: >-
+          {{ existing_tags if existing_tags is sequence and existing_tags is not string else [existing_tags] }}
+      when: zabbix_host_check.json.result | length > 0
+
     - name: Prepare merged tags for Zabbix update (preserve unrelated tags)
       set_fact:
-        merged_tags: "{{ existing_tags + managed_tags }}"
+        merged_tags: "{{ existing_tags_safe + managed_tags_safe }}"
       when: zabbix_host_check.json.result | length > 0
 
     - name: Build Zabbix host update params with merged tags
