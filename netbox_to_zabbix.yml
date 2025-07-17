@@ -1,7 +1,5 @@
-# This version ensures zabbix_tags is always set before it's used, and errors are avoided.
-
 ---
-- name: Sync NetBox devices to Zabbix and preserve unrelated tags
+- name: Sync NetBox devices to Zabbix using dynamic device role codes from NetBox
   hosts: all
   gather_facts: false
   vars:
@@ -80,6 +78,37 @@
           } ]
           {% endif %}
 
+    # --- DYNAMIC DEVICE ROLE MAP FROM NETBOX ---
+    - name: Get all NetBox device roles via API
+      uri:
+        url: "{{ lookup('env', 'NETBOX_API') }}/api/dcim/device-roles/?limit=1000"
+        headers:
+          Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
+          Accept: "application/json"
+        validate_certs: false
+        method: GET
+      register: nb_device_roles_api
+      delegate_to: localhost
+      run_once: true
+
+    - name: Set netbox_device_roles fact
+      set_fact:
+        netbox_device_roles: "{{ nb_device_roles_api.json.results }}"
+      delegate_to: localhost
+      run_once: true
+
+    - name: Initialize device_role_map
+      set_fact:
+        device_role_map: {}
+
+    - name: Add each device role mapping (slug to sla_report_code)
+      set_fact:
+        device_role_map: "{{ device_role_map | combine({ item.slug | lower: item.custom_fields.sla_report_code }) }}"
+      loop: "{{ netbox_device_roles }}"
+      when:
+        - item.custom_fields.sla_report_code is defined
+        - item.custom_fields.sla_report_code | length > 0
+
     - name: Get existing host from Zabbix
       uri:
         url: "{{ zabbix_api_url }}"
@@ -92,7 +121,7 @@
             "jsonrpc": "2.0",
             "method": "host.get",
             "params": {
-              "output": ["hostid", "host", "tags"],
+              "output": ["hostid", "name", "proxy_hostid"],
               "filter": {"host": "{{ inventory_hostname }}"}
             },
             "auth": "{{ zabbix_api_token }}",
@@ -106,89 +135,47 @@
       set_fact:
         visible_name: "{{ inventory_hostname }}{% if description is defined and description|length > 0 %} - {{ description | trim }}{% endif %}"
 
+    # --- BUILD TAGS DYNAMICALLY FROM NETBOX DEVICE ROLES ---
     - name: Set Zabbix host tags based on device role, site, and NetBox status
       set_fact:
         zabbix_tags: >-
           {%- set tags = [] -%}
-          {%- if device_roles is defined and device_roles|length > 0 -%}
-            {%- for role in device_roles -%}
-              {%- set _ = tags.append({'tag': 'device', 'value': role}) -%}
-            {%- endfor -%}
+          {%- for role in device_roles | default([]) -%}
+            {%- set normrole = role | lower | trim -%}
+            {%- if device_role_map[normrole] is defined -%}
+              {%- set _ = tags.append({"tag": "device", "value": device_role_map[normrole]}) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {%- if tags | selectattr('tag', 'equalto', 'device') | list | length == 0 -%}
+            {%- set _ = tags.append({"tag": "device", "value": "unknown"}) -%}
           {%- endif -%}
-          {%- set _ = tags.append({'tag': 'site', 'value': site_slug | lower }) -%}
+          {%- if platform is defined -%}
+            {%- set plat = platform | lower -%}
+            {%- if 'apc' in plat -%}
+              {%- set _ = tags.append({"tag": "manufacturer", "value": "apc"}) -%}
+            {%- elif 'eaton' in plat -%}
+              {%- set _ = tags.append({"tag": "manufacturer", "value": "eaton"}) -%}
+            {%- elif 'aoscx' in plat -%}
+              {%- set _ = tags.append({"tag": "manufacturer", "value": "aruba"}) -%}
+            {%- elif 'cisco' in plat -%}
+              {%- set _ = tags.append({"tag": "manufacturer", "value": "cisco"}) -%}
+            {%- endif -%}
+          {%- endif -%}
+          {%- if site_slug is defined -%}
+            {%- set _ = tags.append({"tag": "site", "value": site_slug | lower}) -%}
+          {%- endif -%}
+          {%- set nbstat = status.value if status is mapping and status.value is defined else status -%}
+          {%- set _ = tags.append({"tag": "nb_status", "value": nbstat }) -%}
           {{ tags }}
 
-    - name: Ensure managed_tags is always a list
+    - name: Set Zabbix host status based on device status
       set_fact:
-        managed_tags: >-
-          {{ zabbix_tags if zabbix_tags is sequence and zabbix_tags is not string else [zabbix_tags] }}
-
-    - name: Ensure existing_tags is always a list
-      set_fact:
-        existing_tags: >-
-          {{
-            (zabbix_host_check.json.result[0].tags | default([]))
-            | rejectattr('tag', 'in', managed_tags | map(attribute='tag') | list)
-            | list
-          }}
-      when: zabbix_host_check.json.result | length > 0
-
-    - name: Listify managed_tags and existing_tags (safe for all cases)
-      set_fact:
-        managed_tags_safe: >-
-          {{ managed_tags if managed_tags is sequence and managed_tags is not string else [managed_tags] }}
-        existing_tags_safe: >-
-          {{ existing_tags if existing_tags is sequence and existing_tags is not string else [existing_tags] }}
-      when: zabbix_host_check.json.result | length > 0
-
-    - name: Prepare merged tags for Zabbix update (preserve unrelated tags)
-      set_fact:
-        merged_tags: "{{ existing_tags_safe + managed_tags_safe }}"
-      when: zabbix_host_check.json.result | length > 0
-
-    - name: Build Zabbix host update params with merged tags
-      set_fact:
-        zabbix_update_params: >-
-          {{
-            {
-              "hostid": zabbix_host_check.json.result[0].hostid,
-              "name": visible_name,
-              "groups": [
-                {"groupid": site_to_group_mapping[site_slug] | default(site_to_group_mapping['_default']) }
-              ],
-              "templates": [
-                {"templateid": template_id }
-              ],
-              "tags": merged_tags
-            }
-            | combine((proxy_id | length > 0) | ternary({"proxy_hostid": proxy_id}, {}), recursive=True)
-          }}
-      when:
-        - zabbix_host_check.json is defined
-        - zabbix_host_check.json.result is defined
-        - zabbix_host_check.json.result | length > 0
-
-    - name: Skip update if host doesn't exist
-      debug:
-        msg: "Skipping update: Host '{{ inventory_hostname }}' not found in Zabbix."
-      when: zabbix_host_check.json.result | length == 0
-
-    - name: Update existing host in Zabbix with merged tags
-      uri:
-        url: "{{ zabbix_api_url }}"
-        method: POST
-        headers:
-          Content-Type: "application/json"
-        body_format: json
-        body:
-          jsonrpc: "2.0"
-          method: "host.update"
-          params: "{{ zabbix_update_params }}"
-          auth: "{{ zabbix_api_token }}"
-          id: 1
-        validate_certs: false
-      delegate_to: localhost
-      when: zabbix_host_check.json.result | length > 0
+        zabbix_host_status: >-
+          {% if status in ['active', 'Active', 1, '1'] or (status.label | default('') | lower) == 'active' %}
+            '0'
+          {% else %}
+            '1'
+          {% endif %}
 
     - name: Build Zabbix host create params
       set_fact:
@@ -210,6 +197,33 @@
           }}
       when: zabbix_host_check.json.result | length == 0
 
+    - name: Build Zabbix host update params
+      set_fact:
+        zabbix_update_params: >-
+          {{
+            {
+              "hostid": zabbix_host_check.json.result[0].hostid,
+              "name": visible_name,
+              "groups": [
+                {"groupid": site_to_group_mapping[site_slug] | default(site_to_group_mapping['_default']) }
+              ],
+              "templates": [
+                {"templateid": template_id }
+              ],
+              "tags": zabbix_tags
+            }
+            | combine((proxy_id | length > 0) | ternary({"proxy_hostid": proxy_id}, {}), recursive=True)
+          }}
+      when:
+        - zabbix_host_check.json is defined
+        - zabbix_host_check.json.result is defined
+        - zabbix_host_check.json.result | length > 0
+
+    - name: Skip update if host doesn't exist
+      debug:
+        msg: "Skipping update: Host '{{ inventory_hostname }}' not found in Zabbix."
+      when: zabbix_host_check.json.result | length == 0
+
     - name: Create new host in Zabbix
       uri:
         url: "{{ zabbix_api_url }}"
@@ -226,3 +240,20 @@
         validate_certs: false
       delegate_to: localhost
       when: zabbix_host_check.json.result | length == 0
+
+    - name: Update existing host in Zabbix
+      uri:
+        url: "{{ zabbix_api_url }}"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: "host.update"
+          params: "{{ zabbix_update_params }}"
+          auth: "{{ zabbix_api_token }}"
+          id: 1
+        validate_certs: false
+      delegate_to: localhost
+      when: zabbix_host_check.json.result | length > 0
