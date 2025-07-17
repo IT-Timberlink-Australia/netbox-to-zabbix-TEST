@@ -40,7 +40,7 @@
             zabbix_hosts.json.result
             | map(attribute='host')
             | list
-            | map('to_json')  # To ensure string conversion
+            | map('to_json')
             | map('from_json')
             | map('extract', ['host'])
             | map('first')
