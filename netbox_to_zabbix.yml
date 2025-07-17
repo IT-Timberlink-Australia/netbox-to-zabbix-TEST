@@ -113,11 +113,11 @@
         netbox_url: "{{ lookup('env', 'NETBOX_API') }}"
         netbox_token: "{{ lookup('env', 'NETBOX_TOKEN') }}"
         validate_certs: false
-        data: {}
+        query: {}
       register: nb_device_roles
       delegate_to: localhost
       run_once: true
-   
+
     - name: Set netbox_device_roles fact
       set_fact:
         netbox_device_roles: "{{ nb_device_roles.results }}"
