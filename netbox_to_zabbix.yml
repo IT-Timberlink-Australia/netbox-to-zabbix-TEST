@@ -5,8 +5,6 @@
   vars:
     zabbix_api_url: "{{ lookup('env', 'ZABBIX_API_URL') }}"
     zabbix_api_token: "{{ lookup('env', 'ZABBIX_API_TOKEN') }}"
-    netbox_api_url: "{{ lookup('env', 'NETBOX_API') }}"
-    netbox_api_token: "{{ lookup('env', 'NETBOX_TOKEN') }}"
 
   tasks:
     - name: Verify inventory data
@@ -112,8 +110,8 @@
 
     - name: Get all NetBox device roles
       netbox.netbox.netbox_device_role:
-        netbox_url: "{{ netbox_api_url }}"
-        netbox_token: "{{ netbox_api_token }}"
+        netbox_url: "{{ lookup('env', 'NETBOX_API') }}"
+        netbox_token: "{{ lookup('env', 'NETBOX_TOKEN') }}"
         validate_certs: false
       register: nb_device_roles
       delegate_to: localhost
