@@ -1,0 +1,73 @@
+---
+- name: Compare AWX Inventory with Zabbix and tag hosts
+  hosts: localhost
+  gather_facts: false
+  vars:
+    zabbix_api_url: "{{ lookup('env', 'ZABBIX_API_URL') }}"
+    zabbix_api_token: "{{ lookup('env', 'ZABBIX_API_TOKEN') }}"
+  tasks:
+    - name: Get all hosts from Zabbix
+      uri:
+        url: "{{ zabbix_api_url }}"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: "host.get"
+          params:
+            output: ["hostid", "host", "tags"]
+          auth: "{{ zabbix_api_token }}"
+          id: 1
+        validate_certs: false
+      register: zabbix_hosts
+
+    - name: Get list of AWX inventory hosts
+      add_host:
+        name: "{{ item }}"
+      loop: "{{ groups['all'] }}"
+      when: item != 'localhost'
+
+    - name: Set list of inventory hostnames
+      set_fact:
+        inventory_hosts: "{{ groups['all'] | difference(['localhost']) }}"
+
+    - name: Prepare Zabbix tagging updates
+      set_fact:
+        zabbix_tag_updates: >-
+          {{
+            zabbix_hosts.json.result
+            | map(attribute='host')
+            | list
+            | map('to_json')  # To ensure string conversion
+            | map('from_json')
+            | map('extract', ['host'])
+            | map('first')
+            | map('lower')
+            | list
+          }}
+
+    - name: Tag Zabbix hosts with cmdb status
+      vars:
+        cmdb_value: "{{ 'true' if item.host in inventory_hosts else 'false' }}"
+      uri:
+        url: "{{ zabbix_api_url }}"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: "host.update"
+          params:
+            hostid: "{{ item.hostid }}"
+            tags:
+              - tag: "cmdb"
+                value: "{{ cmdb_value }}"
+          auth: "{{ zabbix_api_token }}"
+          id: 1
+        validate_certs: false
+      loop: "{{ zabbix_hosts.json.result }}"
+      loop_control:
+        label: "{{ item.host }}"
