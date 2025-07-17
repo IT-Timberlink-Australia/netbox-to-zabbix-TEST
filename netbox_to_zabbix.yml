@@ -110,9 +110,9 @@
 
     - name: Get all NetBox device roles via API
       uri:
-        url: "{{ NETBOX_API }}/api/dcim/device-roles/?limit=1000"
+        url: "{{ lookup('env', 'NETBOX_API') }}/api/dcim/device-roles/?limit=1000"
         headers:
-          Authorization: "Token {{ NETBOX_TOKEN }}"
+          Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
           Accept: "application/json"
         validate_certs: false
         method: GET
