@@ -135,6 +135,10 @@
       set_fact:
         visible_name: "{{ inventory_hostname }}{% if description is defined and description|length > 0 %} - {{ description | trim }}{% endif %}"
 
+    - name: Debug platform value for tag build
+      debug:
+        var: platform
+
     # --- BUILD TAGS DYNAMICALLY FROM NETBOX DEVICE ROLES ---
     - name: Set Zabbix host tags based on device role, site, and NetBox status
       set_fact:
@@ -149,24 +153,32 @@
           {%- if tags | selectattr('tag', 'equalto', 'device') | list | length == 0 -%}
             {%- set _ = tags.append({"tag": "device", "value": "unknown"}) -%}
           {%- endif -%}
-          {%- if platform is defined -%}
-            {%- set plat = platform | lower -%}
-            {%- if 'apc' in plat -%}
-              {%- set _ = tags.append({"tag": "manufacturer", "value": "apc"}) -%}
-            {%- elif 'eaton' in plat -%}
-              {%- set _ = tags.append({"tag": "manufacturer", "value": "eaton"}) -%}
-            {%- elif 'aoscx' in plat -%}
-              {%- set _ = tags.append({"tag": "manufacturer", "value": "aruba"}) -%}
-            {%- elif 'cisco' in plat -%}
-              {%- set _ = tags.append({"tag": "manufacturer", "value": "cisco"}) -%}
-            {%- endif -%}
+          {# --- Robust manufacturer detection --- #}
+          {%- set plat = (ansible_network_os | default(platform, True) | default('')) | lower -%}
+          {%- if 'apc' in plat -%}
+            {%- set _ = tags.append({"tag": "manufacturer", "value": "apc"}) -%}
+          {%- elif 'eaton' in plat -%}
+            {%- set _ = tags.append({"tag": "manufacturer", "value": "eaton"}) -%}
+          {%- elif 'aoscx' in plat -%}
+            {%- set _ = tags.append({"tag": "manufacturer", "value": "aruba"}) -%}
+          {%- elif 'cisco' in plat -%}
+            {%- set _ = tags.append({"tag": "manufacturer", "value": "cisco"}) -%}
+          {%- elif 'windows' in plat -%}
+            {%- set _ = tags.append({"tag": "manufacturer", "value": "microsoft"}) -%}
+          {%- elif 'linux' in plat -%}
+            {%- set _ = tags.append({"tag": "manufacturer", "value": "linux"}) -%}
+          {%- elif 'forti' in plat -%}
+            {%- set _ = tags.append({"tag": "manufacturer", "value": "fortinet"}) -%}
+          {%- elif 'unifi' in plat -%}
+            {%- set _ = tags.append({"tag": "manufacturer", "value": "unifi"}) -%}
+          {%- elif 'vmware' in plat -%}
+            {%- set _ = tags.append({"tag": "manufacturer", "value": "vmware"}) -%}
           {%- endif -%}
           {%- if site_slug is defined -%}
             {%- set _ = tags.append({"tag": "site", "value": site_slug | lower}) -%}
           {%- endif -%}
           {%- set nbstat = status.value if status is mapping and status.value is defined else status -%}
           {%- set _ = tags.append({"tag": "nb_status", "value": nbstat }) -%}
-          {# ---- Add or Update cmdb tag ---- #}
           {%- set _ = tags.append({"tag": "cmdb", "value": "true"}) -%}
           {{ tags }}
 
