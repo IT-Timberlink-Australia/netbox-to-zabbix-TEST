@@ -1,0 +1,79 @@
+---
+- name: Cleanup stale hosts from AWX not present in NetBox
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    netbox_api_url: "{{ lookup('env', 'NETBOX_API') }}/api/dcim/devices/"
+    netbox_vm_api_url: "{{ lookup('env', 'NETBOX_API') }}/api/virtualization/virtual-machines/"
+    netbox_token: "{{ lookup('env', 'NETBOX_TOKEN') }}"
+    awx_api_url: "{{ lookup('env', 'AWX_API_URL') }}"
+    awx_token: "{{ lookup('env', 'AWX_API_TOKEN') }}"
+    awx_inventory_id: "<YOUR_AWX_INVENTORY_ID>"  # Replace or override in job template
+    netbox_filters: "&status=active&cf_mon_required=true&has_primary_ip=true&platform__isnull=false&custom_fields__zabbix_template_name__empty=false&custom_fields__sla_report_code__isnull=false"
+
+  tasks:
+
+    - name: Get devices from NetBox
+      uri:
+        url: "{{ netbox_api_url }}?limit=1000{{ netbox_filters }}"
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+        method: GET
+        return_content: true
+        validate_certs: false
+      register: netbox_devices
+
+    - name: Get VMs from NetBox
+      uri:
+        url: "{{ netbox_vm_api_url }}?limit=1000{{ netbox_filters }}"
+        headers:
+          Authorization: "Token {{ netbox_token }}"
+        method: GET
+        return_content: true
+        validate_certs: false
+      register: netbox_vms
+
+    - name: Combine NetBox hostnames
+      set_fact:
+        netbox_hostnames: >-
+          {{
+            (netbox_devices.json.results | map(attribute='name') | list) +
+            (netbox_vms.json.results | map(attribute='name') | list)
+          }}
+
+    - name: Get current hosts in AWX inventory
+      uri:
+        url: "{{ awx_api_url }}/api/v2/inventories/{{ awx_inventory_id }}/hosts/?page_size=1000"
+        headers:
+          Authorization: "Bearer {{ awx_token }}"
+        method: GET
+        return_content: true
+        validate_certs: false
+      register: awx_hosts
+
+    - name: Extract AWX hostnames and IDs
+      set_fact:
+        awx_host_map: >-
+          {{
+            dict(awx_hosts.json.results | map(attribute='name') | zip(awx_hosts.json.results | map(attribute='id')))
+          }}
+
+    - name: Identify stale AWX hosts
+      set_fact:
+        stale_hosts: >-
+          {{
+            awx_host_map.keys() | difference(netbox_hostnames)
+          }}
+
+    - name: Delete stale hosts from AWX
+      uri:
+        url: "{{ awx_api_url }}/api/v2/hosts/{{ awx_host_map[item] }}/"
+        headers:
+          Authorization: "Bearer {{ awx_token }}"
+        method: DELETE
+        validate_certs: false
+      loop: "{{ stale_hosts }}"
+      loop_control:
+        label: "{{ item }}"
+      when: stale_hosts | length > 0
