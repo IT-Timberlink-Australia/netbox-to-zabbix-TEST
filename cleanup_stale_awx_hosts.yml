@@ -9,7 +9,7 @@
     netbox_token: "{{ lookup('env', 'NETBOX_TOKEN') }}"
     awx_api_url: "{{ lookup('env', 'AWX_API_URL') }}"
     awx_token: "{{ lookup('env', 'AWX_API_TOKEN') }}"
-    awx_inventory_id: "<YOUR_AWX_INVENTORY_ID>"  # Replace or override in job template
+    awx_inventory_id: "5"  # Replace or override in job template
     netbox_filters: "&status=active&cf_mon_required=true&has_primary_ip=true&platform__isnull=false&custom_fields__zabbix_template_name__empty=false&custom_fields__sla_report_code__isnull=false"
 
   tasks:
