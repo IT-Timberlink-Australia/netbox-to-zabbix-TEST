@@ -85,14 +85,40 @@
             awx_host_map.keys() | difference(netbox_hostnames)
           }}
 
-    - name: Delete stale hosts from AWX
+    - name: Attempt to delete stale host from AWX
       uri:
         url: "{{ awx_api_url }}/api/v2/hosts/{{ awx_host_map[item] }}/"
         headers:
           Authorization: "Bearer {{ awx_token }}"
         method: DELETE
+        status_code: [200, 204, 409]
         validate_certs: false
       loop: "{{ stale_hosts }}"
       loop_control:
         label: "{{ item }}"
-      when: stale_hosts | length > 0
+      register: delete_attempts
+      failed_when: false
+
+    - name: Force delete hosts that returned 409 Conflict
+      uri:
+        url: "{{ awx_api_url }}/api/v2/hosts/{{ awx_host_map[item.item] }}/"
+        headers:
+          Authorization: "Bearer {{ awx_token }}"
+          Content-Type: "application/json"
+        method: DELETE
+        body_format: json
+        body:
+          force: true
+        status_code: [200, 204]
+        validate_certs: false
+      loop: "{{ delete_attempts.results | selectattr('status', 'equalto', 409) | list }}"
+      loop_control:
+        label: "{{ item.item }}"
+      when: delete_attempts.results | selectattr('status', 'equalto', 409) | list | length > 0
+
+    - name: Log failed forced deletions
+      debug:
+        msg: "Failed to force delete host: {{ item.item }}"
+      when: item.status != 200 and item.status != 204
+      loop: "{{ delete_attempts.results }}"
+
