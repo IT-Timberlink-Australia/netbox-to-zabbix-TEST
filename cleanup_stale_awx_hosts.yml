@@ -46,9 +46,30 @@
       register: netbox_vms
       failed_when: netbox_vms.status != 200
 
-    - name: Debug NetBox device response
-      debug:
-        var: netbox_devices
+    - name: Combine NetBox hostnames
+      set_fact:
+        netbox_hostnames: >-
+          {{
+            (
+              netbox_devices.json.results | map(attribute='name') | list
+            ) + (
+              netbox_vms.json.results | map(attribute='name') | list
+            )
+          }}
+
+    - name: Get hosts from AWX inventory
+      uri:
+        url: "{{ awx_api_url }}/api/v2/hosts/?inventory={{ awx_inventory_id }}&page_size=1000"
+        method: GET
+        headers:
+          Authorization: "Bearer {{ awx_token }}"
+          Content-Type: "application/json"
+        return_content: true
+        status_code: 200
+        validate_certs: false
+      register: awx_hosts
+      delegate_to: localhost
+      failed_when: awx_hosts.status != 200
 
     - name: Extract AWX hostnames and IDs
       set_fact:
