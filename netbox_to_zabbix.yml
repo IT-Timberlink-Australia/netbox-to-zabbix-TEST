@@ -78,37 +78,6 @@
           } ]
           {% endif %}
 
-    # --- DYNAMIC DEVICE ROLE MAP FROM NETBOX ---
-    - name: Get all NetBox device roles via API
-      uri:
-        url: "{{ lookup('env', 'NETBOX_API') }}/api/dcim/device-roles/?limit=1000"
-        headers:
-          Authorization: "Token {{ lookup('env', 'NETBOX_TOKEN') }}"
-          Accept: "application/json"
-        validate_certs: false
-        method: GET
-      register: nb_device_roles_api
-      delegate_to: localhost
-      run_once: true
-
-    - name: Set netbox_device_roles fact
-      set_fact:
-        netbox_device_roles: "{{ nb_device_roles_api.json.results }}"
-      delegate_to: localhost
-      run_once: true
-
-    - name: Initialize device_role_map
-      set_fact:
-        device_role_map: {}
-
-    - name: Add each device role mapping (slug to sla_report_code)
-      set_fact:
-        device_role_map: "{{ device_role_map | combine({ item.slug | lower: item.custom_fields.sla_report_code }) }}"
-      loop: "{{ netbox_device_roles }}"
-      when:
-        - item.custom_fields.sla_report_code is defined
-        - item.custom_fields.sla_report_code | length > 0
-
     - name: Get existing host from Zabbix
       uri:
         url: "{{ zabbix_api_url }}"
@@ -144,12 +113,11 @@
       set_fact:
         zabbix_tags: >-
           {%- set tags = [] -%}
-          {%- for role in device_roles | default([]) -%}
-            {%- set normrole = role | lower | trim -%}
-            {%- if device_role_map[normrole] is defined -%}
-              {%- set _ = tags.append({"tag": "device", "value": device_role_map[normrole]}) -%}
-            {%- endif -%}
-          {%- endfor -%}
+          {%- if sla_report_code is defined and sla_report_code | length > 0 -%}
+            {%- set _ = tags.append({"tag": "device", "value": sla_report_code}) -%}
+          {%- else -%}
+            {%- set _ = tags.append({"tag": "device", "value": "unknown"}) -%}
+          {%- endif -%}
           {%- if tags | selectattr('tag', 'equalto', 'device') | list | length == 0 -%}
             {%- set _ = tags.append({"tag": "device", "value": "unknown"}) -%}
           {%- endif -%}
