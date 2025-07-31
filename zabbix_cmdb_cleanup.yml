@@ -24,7 +24,6 @@
         headers:
           Content-Type: "application/json"
         body_format: json
-        validate_certs: false
         body:
           jsonrpc: "2.0"
           method: "host.get"
