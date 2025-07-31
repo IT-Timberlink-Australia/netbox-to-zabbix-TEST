@@ -46,7 +46,7 @@
           {{
             all_zabbix_hosts.json.result
             | selectattr('tags', 'defined')
-            | selectattr('tags', 'select', 'tag == "cmdb" and value == "true"')
+            | selectattr('tags', 'search', '[{"tag":"cmdb","value":"true"}]')
             | list
           }}
 
