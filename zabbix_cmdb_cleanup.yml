@@ -1,0 +1,75 @@
+---
+- name: Cleanup Zabbix hosts with tag cmdb=true not in AWX inventory
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+    zabbix_api_url: "{{ lookup('env', 'ZABBIX_API_URL') }}"
+    zabbix_api_token: "{{ lookup('env', 'ZABBIX_API_TOKEN') }}"
+    awx_inventory_hostnames: "{{ groups['all'] | default([]) }}"
+    dry_run: true  # Set to false to actually delete hosts
+
+  tasks:
+
+    - name: Get all Zabbix hosts with cmdb=true tag
+      uri:
+        url: "{{ zabbix_api_url }}"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body: |
+          {
+            "jsonrpc": "2.0",
+            "method": "host.get",
+            "params": {
+              "output": ["hostid", "host"],
+              "selectTags": "extend",
+              "filterTags": [{ "tag": "cmdb", "value": "true" }]
+            },
+            "auth": "{{ zabbix_api_token }}",
+            "id": 1
+          }
+        validate_certs: false
+      register: zabbix_cmdb_hosts
+      delegate_to: localhost
+
+    - name: Extract orphaned hosts (in Zabbix but not in AWX)
+      set_fact:
+        orphaned_hosts: >-
+          {{
+            zabbix_cmdb_hosts.json.result
+            | selectattr('host', 'defined')
+            | selectattr('host', 'not in', awx_inventory_hostnames)
+            | list
+          }}
+
+    - name: Show orphaned hosts that would be removed
+      debug:
+        msg: "Dry Run - would remove Zabbix host '{{ item.host }}' (ID {{ item.hostid }})"
+      loop: "{{ orphaned_hosts }}"
+      when: dry_run | bool
+      loop_control:
+        label: "{{ item.host }}"
+
+    - name: Delete orphaned hosts from Zabbix
+      uri:
+        url: "{{ zabbix_api_url }}"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body: |
+          {
+            "jsonrpc": "2.0",
+            "method": "host.delete",
+            "params": [ "{{ item.hostid }}" ],
+            "auth": "{{ zabbix_api_token }}",
+            "id": 1
+          }
+        validate_certs: false
+      loop: "{{ orphaned_hosts }}"
+      when: not dry_run | bool
+      loop_control:
+        label: "{{ item.host }}"
+      delegate_to: localhost
