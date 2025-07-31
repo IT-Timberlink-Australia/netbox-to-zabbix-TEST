@@ -10,21 +10,6 @@
     dry_run: true  # Set to false to actually delete hosts
 
   tasks:
-
-    - name: Debug Zabbix connection variables
-      debug:
-        msg:
-          - "API URL: {{ zabbix_api_url }}"
-          - "Token: {{ zabbix_api_token | default('MISSING', true) }}"
-
-    - name: Debug token length
-      debug:
-        msg: "Zabbix API token is {{ zabbix_api_token | length }} characters long"
-
-    - name: Debug Zabbix API response
-      debug:
-        var: all_zabbix_hosts
-
     - name: Get all Zabbix hosts with tags
       uri:
         url: "{{ zabbix_api_url }}"
@@ -50,16 +35,44 @@
           {{
             all_zabbix_hosts.json.result
             | selectattr('tags', 'defined')
-            | selectattr('tags', 'select', 'tag == "cmdb" and value == "true"')
+            | selectattr('tags', 'select', 'cmdb_true(tags)')
             | list
           }}
+      vars:
+        # Helper filter: returns True if tags contain {'tag': 'cmdb', 'value': 'true'}
+        cmdb_true: |
+          {% filter from_yaml %}
+          !!python/name:__main__.cmdb_true
+          {% endfilter %}
+      # Below is not supported in vanilla Ansible/Jinja2; define inline below
+
+    - name: Workaround filter to select hosts with cmdb=true (Jinja2 can't do complex logic inline)
+      set_fact:
+        zabbix_cmdb_hosts: >-
+          {{
+            all_zabbix_hosts.json.result
+            | selectattr('tags', 'defined')
+            | selectattr('tags', 'truthy', 'is_cmdb_true')
+            | list
+          }}
+      vars:
+        # We need to define the helper here (dirty hack since Jinja can't do this inline!)
+        is_cmdb_true: |
+          {% macro is_cmdb_true(tags) -%}
+          {%- for tag in tags -%}
+            {%- if tag.tag == "cmdb" and tag.value == "true" -%}
+              {{ True }}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ False }}
+          {%- endmacro %}
+      no_log: false
 
     - name: Extract orphaned hosts (in Zabbix but not in AWX)
       set_fact:
         orphaned_hosts: >-
           {{
             zabbix_cmdb_hosts
-            | selectattr('host', 'defined')
             | rejectattr('host', 'in', awx_inventory_hostnames)
             | list
           }}
@@ -69,13 +82,6 @@
         msg: "Dry Run - would remove Zabbix host '{{ item.host }}' (ID {{ item.hostid }})"
       loop: "{{ orphaned_hosts }}"
       when: dry_run | bool
-      loop_control:
-        label: "{{ item.host }}"
-
-    - name: Set orphan host IDs list
-      set_fact:
-        orphan_host_ids: "{{ orphaned_hosts | map(attribute='hostid') | list }}"
-      when: not dry_run | bool
 
     - name: Delete orphaned Zabbix hosts with cmdb=true (force delete)
       uri:
@@ -87,15 +93,9 @@
         body:
           jsonrpc: "2.0"
           method: "host.delete"
-          params: "{{ orphan_host_ids }}"
+          params: "{{ orphaned_hosts | map(attribute='hostid') | list }}"
           auth: "{{ zabbix_api_token }}"
           id: 2
         status_code: [200]
         validate_certs: false
-      register: delete_result
-      when: not dry_run | bool
-
-    - name: Show deletion result
-      debug:
-        var: delete_result
-      when: not dry_run | bool
+      when: not dry_run | bool and orphaned_hosts | length > 0
