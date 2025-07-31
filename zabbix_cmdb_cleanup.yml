@@ -21,6 +21,10 @@
       debug:
         msg: "Zabbix API token is {{ zabbix_api_token | length }} characters long"
 
+    - name: Debug Zabbix API response
+      debug:
+        var: all_zabbix_hosts
+
     - name: Get all Zabbix hosts with tags
       uri:
         url: "{{ zabbix_api_url }}"
