@@ -64,24 +64,20 @@
       loop_control:
         label: "{{ item.host }}"
 
-    - name: Delete orphaned hosts from Zabbix
+    - name: Delete orphaned Zabbix hosts with cmdb=true (force delete)
       uri:
         url: "{{ zabbix_api_url }}"
         method: POST
         headers:
           Content-Type: "application/json"
         body_format: json
-        body: |
-          {
-            "jsonrpc": "2.0",
-            "method": "host.delete",
-            "params": [ "{{ item.hostid }}" ],
-            "auth": "{{ zabbix_api_token }}",
-            "id": 1
-          }
+        body:
+          jsonrpc: "2.0"
+          method: "host.delete"
+          params: "{{ orphan_host_ids }}"
+          auth: "{{ zabbix_api_token }}"
+          id: 2
+        status_code: [200]
         validate_certs: false
-      loop: "{{ orphaned_hosts }}"
-      when: not dry_run | bool
-      loop_control:
-        label: "{{ item.host }}"
-      delegate_to: localhost
+      register: delete_result
+      when: not dry_run | default(false)
