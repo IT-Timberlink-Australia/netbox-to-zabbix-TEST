@@ -11,6 +11,12 @@
 
   tasks:
 
+    - name: Debug Zabbix connection variables
+      debug:
+        msg:
+          - "API URL: {{ zabbix_api_url }}"
+          - "Token: {{ zabbix_api_token | default('MISSING', true) }}"
+
     - name: Get all Zabbix hosts with tags
       uri:
         url: "{{ zabbix_api_url }}"
