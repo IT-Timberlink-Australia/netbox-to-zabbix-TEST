@@ -46,7 +46,7 @@
           {{
             all_zabbix_hosts.json.result
             | selectattr('tags', 'defined')
-            | selectattr('tags', 'search', '[{"tag":"cmdb","value":"true"}]')
+            | selectattr('tags', 'select', 'tag == "cmdb" and value == "true"')
             | list
           }}
 
@@ -54,7 +54,7 @@
       set_fact:
         orphaned_hosts: >-
           {{
-            zabbix_cmdb_hosts.json.result
+            zabbix_cmdb_hosts
             | selectattr('host', 'defined')
             | rejectattr('host', 'in', awx_inventory_hostnames)
             | list
@@ -67,6 +67,11 @@
       when: dry_run | bool
       loop_control:
         label: "{{ item.host }}"
+
+    - name: Set orphan host IDs list
+      set_fact:
+        orphan_host_ids: "{{ orphaned_hosts | map(attribute='hostid') | list }}"
+      when: not dry_run | bool
 
     - name: Delete orphaned Zabbix hosts with cmdb=true (force delete)
       uri:
@@ -84,4 +89,9 @@
         status_code: [200]
         validate_certs: false
       register: delete_result
-      when: not dry_run | default(false)
+      when: not dry_run | bool
+
+    - name: Show deletion result
+      debug:
+        var: delete_result
+      when: not dry_run | bool
