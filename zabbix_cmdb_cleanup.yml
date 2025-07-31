@@ -11,7 +11,7 @@
 
   tasks:
 
-    - name: Get Zabbix hosts tagged with cmdb=true
+    - name: Get all Zabbix hosts with tags
       uri:
         url: "{{ zabbix_api_url }}"
         method: POST
@@ -23,7 +23,7 @@
           method: "host.get"
           params:
             output: ["hostid", "host"]
-            selectTags: ["tag", "value"]
+            selectTags: "extend"
           auth: "{{ zabbix_api_token }}"
           id: 1
       register: all_zabbix_hosts
@@ -35,8 +35,7 @@
           {{
             all_zabbix_hosts.json.result
             | selectattr('tags', 'defined')
-            | selectattr('tags', 'selectattr', 'tag', 'equalto', 'cmdb')
-            | selectattr('tags', 'selectattr', 'value', 'equalto', 'true')
+            | selectattr('tags', 'select', 'tag == "cmdb" and value == "true"')
             | list
           }}
 
