@@ -11,28 +11,34 @@
 
   tasks:
 
-    - name: Get all Zabbix hosts with cmdb=true tag
+    - name: Get Zabbix hosts tagged with cmdb=true
       uri:
         url: "{{ zabbix_api_url }}"
         method: POST
         headers:
           Content-Type: "application/json"
         body_format: json
-        body: |
-          {
-            "jsonrpc": "2.0",
-            "method": "host.get",
-            "params": {
-              "output": ["hostid", "host"],
-              "selectTags": "extend",
-              "filterTags": [{ "tag": "cmdb", "value": "true" }]
-            },
-            "auth": "{{ zabbix_api_token }}",
-            "id": 1
-          }
-        validate_certs: false
-      register: zabbix_cmdb_hosts
+        body:
+          jsonrpc: "2.0"
+          method: "host.get"
+          params:
+            output: ["hostid", "host"]
+            selectTags: ["tag", "value"]
+          auth: "{{ zabbix_api_token }}"
+          id: 1
+      register: all_zabbix_hosts
       delegate_to: localhost
+
+    - name: Filter Zabbix hosts with tag cmdb=true
+      set_fact:
+        zabbix_cmdb_hosts: >-
+          {{
+            all_zabbix_hosts.json.result
+            | selectattr('tags', 'defined')
+            | selectattr('tags', 'selectattr', 'tag', 'equalto', 'cmdb')
+            | selectattr('tags', 'selectattr', 'value', 'equalto', 'true')
+            | list
+          }}
 
     - name: Extract orphaned hosts (in Zabbix but not in AWX)
       set_fact:
