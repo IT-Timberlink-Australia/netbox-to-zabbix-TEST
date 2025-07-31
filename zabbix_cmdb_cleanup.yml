@@ -40,7 +40,7 @@
           {{
             zabbix_cmdb_hosts.json.result
             | selectattr('host', 'defined')
-            | selectattr('host', 'not in', awx_inventory_hostnames)
+            | rejectattr('host', 'in', awx_inventory_hostnames)
             | list
           }}
 
