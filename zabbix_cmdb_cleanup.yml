@@ -5,7 +5,7 @@
     zabbix_api_url: "{{ lookup('env', 'ZABBIX_API_URL') }}"
     zabbix_api_token: "{{ lookup('env', 'ZABBIX_API_TOKEN') }}"
     awx_inventory_hostnames: "{{ groups['all'] | default([]) }}"
-    dry_run: true
+    dry_run: false
 
   tasks:
     - name: Get all Zabbix hosts with tags
@@ -44,11 +44,11 @@
             | list
           }}
 
-    - name: Show orphaned hosts that would be removed
-      debug:
-        msg: "Dry Run - would remove Zabbix host '{{ item.host }}' (ID {{ item.hostid }})"
-      loop: "{{ orphaned_hosts }}"
-      when: dry_run | bool
+    #- name: Show orphaned hosts that would be removed
+      #debug:
+        #msg: "Dry Run - would remove Zabbix host '{{ item.host }}' (ID {{ item.hostid }})"
+      #loop: "{{ orphaned_hosts }}"
+      #when: dry_run | bool
 
     - name: Delete orphaned Zabbix hosts with cmdb=true (force delete)
       uri:
