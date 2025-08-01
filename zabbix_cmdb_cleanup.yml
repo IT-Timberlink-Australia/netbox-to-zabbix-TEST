@@ -1,13 +1,11 @@
----
 - name: Cleanup Zabbix hosts with tag cmdb=true not in AWX inventory
   hosts: localhost
   gather_facts: false
-
   vars:
     zabbix_api_url: "{{ lookup('env', 'ZABBIX_API_URL') }}"
     zabbix_api_token: "{{ lookup('env', 'ZABBIX_API_TOKEN') }}"
     awx_inventory_hostnames: "{{ groups['all'] | default([]) }}"
-    dry_run: true  # Set to false to actually delete hosts
+    dry_run: true
 
   tasks:
     - name: Get all Zabbix hosts with tags
@@ -29,44 +27,13 @@
       register: all_zabbix_hosts
       delegate_to: localhost
 
-    - name: Filter Zabbix hosts with tag cmdb=true
+    - name: Build list of Zabbix hosts with cmdb=true tag
       set_fact:
-        zabbix_cmdb_hosts: >-
-          {{
-            all_zabbix_hosts.json.result
-            | selectattr('tags', 'defined')
-            | selectattr('tags', 'select', 'cmdb_true(tags)')
-            | list
-          }}
-      vars:
-        # Helper filter: returns True if tags contain {'tag': 'cmdb', 'value': 'true'}
-        cmdb_true: |
-          {% filter from_yaml %}
-          !!python/name:__main__.cmdb_true
-          {% endfilter %}
-      # Below is not supported in vanilla Ansible/Jinja2; define inline below
-
-    - name: Workaround filter to select hosts with cmdb=true (Jinja2 can't do complex logic inline)
-      set_fact:
-        zabbix_cmdb_hosts: >-
-          {{
-            all_zabbix_hosts.json.result
-            | selectattr('tags', 'defined')
-            | selectattr('tags', 'truthy', 'is_cmdb_true')
-            | list
-          }}
-      vars:
-        # We need to define the helper here (dirty hack since Jinja can't do this inline!)
-        is_cmdb_true: |
-          {% macro is_cmdb_true(tags) -%}
-          {%- for tag in tags -%}
-            {%- if tag.tag == "cmdb" and tag.value == "true" -%}
-              {{ True }}
-            {%- endif -%}
-          {%- endfor -%}
-          {{ False }}
-          {%- endmacro %}
-      no_log: false
+        zabbix_cmdb_hosts: "{{ zabbix_cmdb_hosts | default([]) + [ item ] }}"
+      loop: "{{ all_zabbix_hosts.json.result }}"
+      when: >
+        item.tags is defined and
+        (item.tags | selectattr('tag', 'equalto', 'cmdb') | selectattr('value', 'equalto', 'true') | list | length > 0)
 
     - name: Extract orphaned hosts (in Zabbix but not in AWX)
       set_fact:
