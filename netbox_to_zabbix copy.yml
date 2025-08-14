@@ -214,9 +214,37 @@
       delegate_to: localhost
       register: zabbix_host_check
 
-    - name: Compute desired site group id (string)
+    - name: Detect if device is a VM
       set_fact:
-        desired_site_groupid: "{{ (site_to_group_mapping[site_slug] | default(site_to_group_mapping['_default'])) | string }}"
+        is_vm: >-
+          {% set plat = (ansible_network_os | default(platform, true) | default('') | lower) %}
+          {% set role = (device_role_slug | default(device_role, true) | default('') | lower) %}
+          {{ 'vmware' in plat
+            or 'virtual' in role
+            or role in ['server-virtual','vm','vm_server','vm-host','esxi-vm']
+            or (is_virtual | default(false)) }}
+
+    - name: Normalise tenant slug
+      set_fact:
+        tenant_slug_norm: >-
+          {% if tenant is mapping and (tenant.slug is defined) %}
+            {{ tenant.slug | lower }}
+          {% elif tenant is mapping and (tenant.name is defined) %}
+            {{ tenant.name | lower | regex_replace('[^a-z0-9]+','-') }}
+          {% else %}
+            {{ (tenant | default('') | lower) }}
+          {% endif %}
+
+    - name: Compute desired site group id with VM/tenant override
+      set_fact:
+        desired_site_groupid: >-
+          {% if is_vm
+                and (site_slug | lower) == 'logicalis-data-centre'
+                and (tenant_vm_group_map.get(tenant_slug_norm) is not none) %}
+          {{ tenant_vm_group_map[tenant_slug_norm] }}
+          {% else %}
+          {{ site_to_group_mapping.get(site_slug, site_to_group_mapping['_default']) }}
+          {% endif %}
 
     - name: Build merged groups (preserve existing + ensure site group)
       set_fact:
