@@ -90,18 +90,18 @@
 
     - name: Determine proxy ID (by site_id with default)
       set_fact:
-        proxy_id: "{{ site_to_proxy_mapping[site_id | string] | default(site_to_proxy_mapping['_default']) }}"
+        proxy_id: "{{ site_to_proxy_mapping[site_id | string] | default(site_to_proxy_mapping['_default']) | string }}"
 
-    - name: Build proxy field if available
+    - name: Proxy field as a mapping (for later combine)
       set_fact:
-        proxy_field: "{{ (proxy_id is defined and proxy_id|string|length > 0) | ternary({'proxy_hostid': proxy_id}, {}) }}"
+        proxy_field: "{{ (proxy_id | length > 0) | ternary({'proxy_hostid': proxy_id}, {}) }}"
 
     - name: Set visible name (include description if present)
       set_fact:
         visible_name: >-
           {{ inventory_hostname }}{% if description is defined and description|length > 0 %} - {{ description | trim }}{% endif %}
 
-    - name: Build Zabbix host tags
+    - name: Build Zabbix host tags (native list)
       set_fact:
         zabbix_tags: >-
           {%- set tags = [] -%}
@@ -142,27 +142,55 @@
             '1'
           {% endif %}
 
-    - name: Determine interface configuration (native list)
+    # --- Interfaces as native lists (no stringified JSON) ---
+    - name: Set interface list for agent
       set_fact:
-        interface_list: >-
-          {% set t = (zabbix_template_name | lower) %}
-          {% if 'agent' in t %}
-          [ {"type":1,"main":1,"useip":1,"ip":"{{ ansible_host }}","dns":"","port":"10050"} ]
-          {% elif 'snmp' in t %}
-          [ {"type":2,"main":1,"useip":1,"ip":"{{ ansible_host }}","dns":"","port":"161",
-              "details":{"version":2,"community":"{$SNMP_COMMUNITY}"} } ]
-          {% else %}
-          [ {"type":3,"main":1,"useip":1,"ip":"{{ ansible_host }}","dns":"","port":"623"} ]
-          {% endif %}
+        interface_list:
+          - type: 1
+            main: 1
+            useip: 1
+            ip: "{{ ansible_host }}"
+            dns: ""
+            port: "10050"
+      when: "'agent' in (zabbix_template_name | lower)"
 
-    - name: Build host macros (SNMP community if SNMP template)
+    - name: Set interface list for SNMP
       set_fact:
-        host_macros: >-
-          {% if 'snmp' in (zabbix_template_name | lower) %}
-          [ {"macro":"{$SNMP_COMMUNITY}","value":"{{ snmp_community }}"} ]
-          {% else %}
-          []
-          {% endif %}
+        interface_list:
+          - type: 2
+            main: 1
+            useip: 1
+            ip: "{{ ansible_host }}"
+            dns: ""
+            port: "161"
+            details:
+              version: 2
+              community: "{$SNMP_COMMUNITY}"
+      when: "'snmp' in (zabbix_template_name | lower)"
+
+    - name: Set interface list for IPMI (fallback)
+      set_fact:
+        interface_list:
+          - type: 3
+            main: 1
+            useip: 1
+            ip: "{{ ansible_host }}"
+            dns: ""
+            port: "623"
+      when: interface_list is not defined
+
+    # --- Macros as native lists ---
+    - name: Set host macros for SNMP
+      set_fact:
+        host_macros:
+          - macro: "{$SNMP_COMMUNITY}"
+            value: "{{ snmp_community }}"
+      when: "'snmp' in (zabbix_template_name | lower)"
+
+    - name: Default empty macros
+      set_fact:
+        host_macros: []
+      when: host_macros is not defined
 
     - name: Get existing host (with groups, templates, interfaces)
       uri:
@@ -187,138 +215,13 @@
       delegate_to: localhost
       register: zabbix_host_check
 
-    - name: Compute desired site group id
+    - name: Compute desired site group id (string)
       set_fact:
-        desired_site_groupid: "{{ site_to_group_mapping[site_slug] | default(site_to_group_mapping['_default']) }}"
+        desired_site_groupid: "{{ (site_to_group_mapping[site_slug] | default(site_to_group_mapping['_default'])) | string }}"
 
     - name: Build merged groups (preserve existing + ensure site group)
       set_fact:
         merged_groups: >-
           {%- set groups = [] -%}
           {%- if zabbix_host_check.json.result | length > 0 -%}
-            {%- for g in zabbix_host_check.json.result[0].groups -%}
-              {%- set _ = groups.append({'groupid': g.groupid}) -%}
-            {%- endfor -%}
-          {%- endif -%}
-          {%- if groups | selectattr('groupid', 'equalto', desired_site_groupid) | list | length == 0 -%}
-            {%- set _ = groups.append({'groupid': desired_site_groupid}) -%}
-          {%- endif -%}
-          {{ groups }}
-
-    - name: Build merged templates (preserve existing + ensure desired template)
-      set_fact:
-        merged_templates: >-
-          {%- set tpls = [] -%}
-          {%- if zabbix_host_check.json.result | length > 0 -%}
-            {%- for t in zabbix_host_check.json.result[0].parentTemplates -%}
-              {%- set _ = tpls.append({'templateid': t.templateid}) -%}
-            {%- endfor -%}
-          {%- endif -%}
-          {%- if tpls | selectattr('templateid', 'equalto', template_id) | list | length == 0 -%}
-            {%- set _ = tpls.append({'templateid': template_id}) -%}
-          {%- endif -%}
-          {{ tpls }}
-
-    - name: Build Zabbix host create params
-      set_fact:
-        zabbix_create_params:
-          host: "{{ inventory_hostname }}"
-          name: "{{ visible_name }}"
-          status: "{{ zabbix_host_status }}"
-          interfaces: "{{ interface_list }}"
-          groups: "{{ [{'groupid': desired_site_groupid}] }}"
-          templates: [ { "templateid": "{{ template_id }}" } ]
-          tags: "{{ zabbix_tags }}"
-          macros: "{{ host_macros }}"
-          <<: "{{ proxy_field }}"
-      when: zabbix_host_check.json.result | length == 0
-
-    - name: Build Zabbix host update params
-      set_fact:
-        zabbix_update_params:
-          hostid: "{{ zabbix_host_check.json.result[0].hostid }}"
-          name: "{{ visible_name }}"
-          status: "{{ zabbix_host_status }}"
-          groups: "{{ merged_groups }}"
-          templates: "{{ merged_templates }}"
-          tags: "{{ zabbix_tags }}"
-          macros: "{{ host_macros }}"
-          <<: "{{ proxy_field }}"
-      when: zabbix_host_check.json.result | length > 0
-
-    - name: Reconcile main interface if host exists (simple replace on change)
-      when: zabbix_host_check.json.result | length > 0
-      block:
-        - name: Find current main interface
-          set_fact:
-            current_main_iface: "{{ (zabbix_host_check.json.result[0].interfaces | selectattr('main','equalto','1') | list | first) | default(None) }}"
-
-        - name: Update interface if type/IP/port differ
-          uri:
-            url: "{{ zabbix_api_url }}"
-            method: POST
-            headers:
-              Content-Type: "application/json"
-            body_format: json
-            body:
-              jsonrpc: "2.0"
-              method: "hostinterface.update"
-              params:
-                interfaceid: "{{ current_main_iface.interfaceid }}"
-                type: "{{ interface_list[0].type }}"
-                useip: "{{ interface_list[0].useip }}"
-                ip: "{{ interface_list[0].ip }}"
-                dns: "{{ interface_list[0].dns }}"
-                port: "{{ interface_list[0].port }}"
-                details: "{{ interface_list[0].details | default(omit) }}"
-              auth: "{{ zabbix_api_token }}"
-              id: 1
-            validate_certs: false
-          delegate_to: localhost
-          when: current_main_iface is not none and
-                ( current_main_iface.type|string != interface_list[0].type|string
-                  or current_main_iface.ip != interface_list[0].ip
-                  or current_main_iface.port|string != interface_list[0].port|string )
-
-    - name: Create new host in Zabbix
-      uri:
-        url: "{{ zabbix_api_url }}"
-        method: POST
-        headers:
-          Content-Type: "application/json"
-        body_format: json
-        body:
-          jsonrpc: "2.0"
-          method: "host.create"
-          params: "{{ zabbix_create_params }}"
-          auth: "{{ zabbix_api_token }}"
-          id: 1
-        validate_certs: false
-      delegate_to: localhost
-      when:
-        - zabbix_host_check.json.result | length == 0
-        - apply_changes | bool
-
-    - name: Update existing host in Zabbix
-      uri:
-        url: "{{ zabbix_api_url }}"
-        method: POST
-        headers:
-          Content-Type: "application/json"
-        body_format: json
-        body:
-          jsonrpc: "2.0"
-          method: "host.update"
-          params: "{{ zabbix_update_params }}"
-          auth: "{{ zabbix_api_token }}"
-          id: 1
-        validate_certs: false
-      delegate_to: localhost
-      when:
-        - zabbix_host_check.json.result | length > 0
-        - apply_changes | bool
-
-    - name: DRY-RUN notice (no changes applied)
-      debug:
-        msg: "apply_changes=false: Zabbix create/update requests were skipped for {{ inventory_hostname }}."
-      when: not apply_changes | bool
+            {%- for g in zabbix_hos_
