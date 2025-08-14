@@ -211,7 +211,7 @@
           }}
       when: zabbix_host_check.json.result | length == 0
 
-    - name: Build Zabbix host update params (combine proxy_field)
+    - name: Build Zabbix host update params (replace groups)
       set_fact:
         zabbix_update_params: >-
           {{
@@ -219,13 +219,8 @@
               'hostid': zabbix_host_check.json.result[0].hostid,
               'name': visible_name,
               'status': zabbix_host_status,
-              'groups': merged_groups,
-              'templates': (
-                  (zabbix_host_check.json.result[0].parentTemplates | map(attribute='templateid') | list)
-                  | map('int')
-                  | list
-                ) | unique | map('string') | list | map('regex_replace','^(.*)$','{\"templateid\": \"\\1\"}') | map('from_yaml') | list
-              ,
+              'groups': [ { 'groupid': (desired_groupid | int) } ],
+              'templates': [ { 'templateid': template_id } ],
               'tags': zabbix_tags,
               'macros': host_macros
             } | combine(proxy_field | default({}))
