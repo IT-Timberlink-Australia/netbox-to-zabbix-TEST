@@ -224,4 +224,135 @@
         merged_groups: >-
           {%- set groups = [] -%}
           {%- if zabbix_host_check.json.result | length > 0 -%}
-            {%- for g in zabbix_hos_
+            {%- for g in zabbix_host_check.json.result[0].groups -%}
+              {%- set _ = groups.append({'groupid': g.groupid|string}) -%}
+            {%- endfor -%}
+          {%- endif -%}
+          {%- if groups | selectattr('groupid', 'equalto', desired_site_groupid) | list | length == 0 -%}
+            {%- set _ = groups.append({'groupid': desired_site_groupid}) -%}
+          {%- endif -%}
+          {{ groups }}
+
+    - name: Build merged templates (preserve existing + ensure desired template)
+      set_fact:
+        merged_templates: >-
+          {%- set tpls = [] -%}
+          {%- if zabbix_host_check.json.result | length > 0 -%}
+            {%- for t in zabbix_host_check.json.result[0].parentTemplates -%}
+              {%- set _ = tpls.append({'templateid': t.templateid}) -%}
+            {%- endfor -%}
+          {%- endif -%}
+          {%- if tpls | selectattr('templateid', 'equalto', template_id) | list | length == 0 -%}
+            {%- set _ = tpls.append({'templateid': template_id}) -%}
+          {%- endif -%}
+          {{ tpls }}
+
+    - name: Build Zabbix host create params (combine proxy_field, no YAML merge)
+      set_fact:
+        zabbix_create_params: >-
+          {{
+            {
+              'host': inventory_hostname,
+              'name': visible_name,
+              'status': zabbix_host_status,
+              'interfaces': interface_list,
+              'groups': [ {'groupid': desired_site_groupid} ],
+              'templates': [ {'templateid': template_id} ],
+              'tags': zabbix_tags,
+              'macros': host_macros
+            } | combine(proxy_field)
+          }}
+      when: zabbix_host_check.json.result | length == 0
+
+    - name: Build Zabbix host update params (combine proxy_field, no YAML merge)
+      set_fact:
+        zabbix_update_params: >-
+          {{
+            {
+              'hostid': zabbix_host_check.json.result[0].hostid,
+              'name': visible_name,
+              'status': zabbix_host_status,
+              'groups': merged_groups,
+              'templates': merged_templates,
+              'tags': zabbix_tags,
+              'macros': host_macros
+            } | combine(proxy_field)
+          }}
+      when: zabbix_host_check.json.result | length > 0
+
+    - name: Reconcile main interface if host exists (simple replace on change)
+      when: zabbix_host_check.json.result | length > 0
+      block:
+        - name: Find current main interface
+          set_fact:
+            current_main_iface: "{{ (zabbix_host_check.json.result[0].interfaces | selectattr('main','equalto','1') | list | first) | default(None) }}"
+
+        - name: Update interface if type/IP/port differ
+          uri:
+            url: "{{ zabbix_api_url }}"
+            method: POST
+            headers:
+              Content-Type: "application/json"
+            body_format: json
+            body:
+              jsonrpc: "2.0"
+              method: "hostinterface.update"
+              params:
+                interfaceid: "{{ current_main_iface.interfaceid }}"
+                type: "{{ interface_list[0].type }}"
+                useip: "{{ interface_list[0].useip }}"
+                ip: "{{ interface_list[0].ip }}"
+                dns: "{{ interface_list[0].dns }}"
+                port: "{{ interface_list[0].port }}"
+                details: "{{ interface_list[0].details | default(omit) }}"
+              auth: "{{ zabbix_api_token }}"
+              id: 1
+            validate_certs: false
+          delegate_to: localhost
+          when: current_main_iface is not none and
+                ( current_main_iface.type|string != interface_list[0].type|string
+                  or current_main_iface.ip != interface_list[0].ip
+                  or current_main_iface.port|string != interface_list[0].port|string )
+
+    - name: Create new host in Zabbix
+      uri:
+        url: "{{ zabbix_api_url }}"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: "host.create"
+          params: "{{ zabbix_create_params }}"
+          auth: "{{ zabbix_api_token }}"
+          id: 1
+        validate_certs: false
+      delegate_to: localhost
+      when:
+        - zabbix_host_check.json.result | length == 0
+        - apply_changes | bool
+
+    - name: Update existing host in Zabbix
+      uri:
+        url: "{{ zabbix_api_url }}"
+        method: POST
+        headers:
+          Content-Type: "application/json"
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: "host.update"
+          params: "{{ zabbix_update_params }}"
+          auth: "{{ zabbix_api_token }}"
+          id: 1
+        validate_certs: false
+      delegate_to: localhost
+      when:
+        - zabbix_host_check.json.result | length > 0
+        - apply_changes | bool
+
+    - name: DRY-RUN notice (no changes applied)
+      debug:
+        msg: "apply_changes=false: Zabbix create/update requests were skipped for {{ inventory_hostname }}."
+      when: not apply_changes | bool
