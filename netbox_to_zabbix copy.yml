@@ -120,10 +120,10 @@
           {%- set _ = tags.append({"tag":"cmdb","value":"true"}) -%}
           {{ tags }}
 
-    - name: Set Zabbix host status based on device status
+    - name: Set Zabbix host status (int)
       set_fact:
-        zabbix_host_status: >-
-          {% if status in ['active','Active',1,'1'] or (status.label | default('') | lower) == 'active' %}'0'{% else %}'1'{% endif %}
+        zabbix_host_status: "{{ 0 if (status in ['active','Active',1,'1'] or (status.label | default('') | lower) == 'active') else 1 }}"
+
 
     # --- Interfaces as native lists ---
     - name: Set interface list for agent
@@ -201,7 +201,7 @@
             {
               'host': inventory_hostname,
               'name': visible_name,
-              'status': zabbix_host_status,
+              'status': (zabbix_host_status | int),
               'interfaces': interface_list,
               'groups': [ { 'groupid': (desired_groupid | int) } ],
               'templates': [ { 'templateid': template_id } ],
@@ -218,7 +218,7 @@
             {
               'hostid': zabbix_host_check.json.result[0].hostid,
               'name': visible_name,
-              'status': zabbix_host_status,
+              'status': (zabbix_host_status | int),
               'groups': [ { 'groupid': (desired_groupid | int) } ],
               'templates': [ { 'templateid': template_id } ],
               'tags': zabbix_tags,
