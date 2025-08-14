@@ -101,29 +101,28 @@
         visible_name: >-
           {{ inventory_hostname }}{% if description is defined and description|length > 0 %} - {{ description | trim }}{% endif %}
 
-    - name: Build Zabbix host tags (native list)
+    - name: Build Zabbix host tags
       set_fact:
         zabbix_tags: >-
           {%- set tags = [] -%}
+
           {# device role / SLA code #}
           {%- if sla_report_code is defined and sla_report_code | length > 0 -%}
             {%- set _ = tags.append({"tag": "device", "value": sla_report_code}) -%}
           {%- else -%}
             {%- set _ = tags.append({"tag": "device", "value": "unknown"}) -%}
           {%- endif -%}
-          {# manufacturer detection #}
+
+          {# manufacturer detection WITHOUT break #}
           {%- set plat = (ansible_network_os | default(platform, true) | default('')) | lower -%}
-          {%- set matched = false -%}
-          {%- for key,val in manufacturer_map.items() -%}
-            {%- if key in plat -%}
-              {%- set _ = tags.append({"tag": "manufacturer", "value": val}) -%}
-              {%- set matched = true -%}
-              {%- break -%}
+          {%- set man = 'unknown' -%}
+          {%- for key, val in manufacturer_map.items() -%}
+            {%- if man == 'unknown' and (key in plat) -%}
+              {%- set man = val -%}
             {%- endif -%}
           {%- endfor -%}
-          {%- if not matched -%}
-            {%- set _ = tags.append({"tag": "manufacturer", "value": "unknown"}) -%}
-          {%- endif -%}
+          {%- set _ = tags.append({"tag": "manufacturer", "value": man}) -%}
+
           {# site + nb_status + cmdb #}
           {%- if site_slug is defined -%}
             {%- set _ = tags.append({"tag": "site", "value": site_slug | lower}) -%}
