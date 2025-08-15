@@ -180,47 +180,75 @@
               if (sla_report_code is defined and (sla_report_code|string)|length > 0)
               else (custom_fields.sla_report_code | default('')))
              | string }}
-        nb_manufacturer: >-
-          {% set man = '' %}
-          {% if device_type is defined and device_type and (device_type.manufacturer is defined) and device_type.manufacturer %}
-            {% set man = (device_type.manufacturer.slug | default(device_type.manufacturer.name, true) | string | lower) %}
-          {% endif %}
-          {% if man == '' and manufacturer is defined and manufacturer %}
-            {% set man = (manufacturer.slug | default(manufacturer.name, true) | string | lower) %}
-          {% endif %}
-          {% if man == '' %}
-            {% set p = (platform.slug | default(platform.name, true) | default(platform, true) | default('', true)) | string | lower %}
-            {% set os = (ansible_network_os | default('')) | string | lower %}
-            {% if 'aoscx' in p or 'aruba' in p %}{% set man = 'aruba' %}
-            {% elif 'cisco' in p or 'ios' in p or 'nxos' in p or 'cisco' in os or 'ios' in os or 'nxos' in os %}{% set man = 'cisco' %}
-            {% elif 'forti' in p or 'forti' in os %}{% set man = 'fortinet' %}
-            {% elif 'juniper' in p or 'junos' in os %}{% set man = 'juniper' %}
-            {% elif 'vmware' in p or 'esxi' in p or 'vmware' in os %}{% set man = 'vmware' %}
-            {% elif 'windows' in p or 'windows' in os %}{% set man = 'microsoft' %}
-            {% elif 'linux' in p or 'linux' in os %}{% set man = 'linux' %}
-            {% elif 'eaton' in p %}{% set man = 'eaton' %}
-            {% elif 'apc' in p %}{% set man = 'apc' %}
-            {% endif %}
-          {% endif %}
-          {{ man if man != '' else 'unknown' }}
 
-    - name: Build Zabbix host tags (manufacturer + SLA CF + site/status/cmdb)
-      set_fact:
-        zabbix_tags: >-
-          {%- set tags = [] -%}
-          {%- if nb_sla_code | length > 0 -%}
-            {%- set _ = tags.append({"tag":"device","value": nb_sla_code }) -%}
-          {%- else -%}
-            {%- set _ = tags.append({"tag":"device","value":"unknown"}) -%}
-          {%- endif -%}
-          {%- set _ = tags.append({"tag":"manufacturer","value": nb_manufacturer }) -%}
-          {%- if site_slug is defined and (site_slug|string)|length > 0 -%}
-            {%- set _ = tags.append({"tag":"site","value": (site_slug|string|lower) }) -%}
-          {%- endif -%}
-          {%- set nbstat = status.value if (status is mapping and status.value is defined) else status -%}
-          {%- set _ = tags.append({"tag":"nb_status","value": (nbstat|string) }) -%}
-          {%- set _ = tags.append({"tag":"cmdb","value":"true"}) -%}
-          {{ tags }}
+# --- Optional: see what we're getting for platform so you can sanity-check ---
+- name: Show platform-related inputs (for manufacturer tag)
+  debug:
+    msg:
+      platform_var: "{{ platform | default(omit) }}"
+      ansible_network_os: "{{ ansible_network_os | default(omit) }}"
+      platform_is_mapping: "{{ (platform is mapping) | ternary('yes','no') }}"
+
+# --- Build Zabbix host tags (manufacturer from *platform*) ---
+- name: Build Zabbix host tags (manufacturer from platform + SLA CF)
+  set_fact:
+    zabbix_tags: >-
+      {%- set tags = [] -%}
+
+      {# --- device/SLA tag (already working) --- #}
+      {%- if sla_report_code is defined and (sla_report_code|string)|length > 0 -%}
+        {%- set _ = tags.append({"tag": "device", "value": sla_report_code|string }) -%}
+      {%- else -%}
+        {%- set _ = tags.append({"tag": "device", "value": "unknown"}) -%}
+      {%- endif -%}
+
+      {# --- manufacturer from platform (robust) --- #}
+      {%- set plat_raw =
+            (platform if platform is defined else None) -%}
+      {%- if plat_raw is mapping -%}
+        {%- set plat_val = (plat_raw.slug | default(plat_raw.name) | default('')) | string -%}
+      {%- else -%}
+        {%- set plat_val = (plat_raw | default(ansible_network_os) | default('')) | string -%}
+      {%- endif -%}
+      {%- set plat = plat_val | lower -%}
+
+      {%- set manufacturer = 'unknown' -%}
+      {%- if 'aoscx' in plat or 'aruba' in plat or 'os-cx' in plat -%}
+        {%- set manufacturer = 'aruba' -%}
+      {%- elif 'cisco' in plat -%}
+        {%- set manufacturer = 'cisco' -%}
+      {%- elif 'forti' in plat -%}
+        {%- set manufacturer = 'fortinet' -%}
+      {%- elif 'synology' in plat or 'diskstation' in plat -%}
+        {%- set manufacturer = 'synology' -%}
+      {%- elif 'apc' in plat -%}
+        {%- set manufacturer = 'apc' -%}
+      {%- elif 'eaton' in plat -%}
+        {%- set manufacturer = 'eaton' -%}
+      {%- elif 'unifi' in plat or 'ubiquiti' in plat -%}
+        {%- set manufacturer = 'unifi' -%}
+      {%- elif 'vmware' in plat or 'esxi' in plat or 'vcenter' in plat -%}
+        {%- set manufacturer = 'vmware' -%}
+      {%- elif 'windows' in plat or 'microsoft' in plat -%}
+        {%- set manufacturer = 'microsoft' -%}
+      {%- elif 'linux' in plat or 'debian' in plat or 'ubuntu' in plat or 'centos' in plat or 'redhat' in plat or 'rhel' in plat -%}
+        {%- set manufacturer = 'linux' -%}
+      {%- endif -%}
+      {%- set _ = tags.append({"tag": "manufacturer", "value": manufacturer}) -%}
+
+      {# --- site tag --- #}
+      {%- if site_slug is defined and (site_slug|string)|length > 0 -%}
+        {%- set _ = tags.append({"tag": "site", "value": (site_slug|string)|lower}) -%}
+      {%- endif -%}
+
+      {# --- NetBox status --- #}
+      {%- set nbstat = status.value if status is mapping and status.value is defined else status -%}
+      {%- set _ = tags.append({"tag": "nb_status", "value": nbstat|string }) -%}
+
+      {# --- cmdb flag --- #}
+      {%- set _ = tags.append({"tag": "cmdb", "value": "true"}) -%}
+
+      {{ tags }}
 
     # ---------------- Read existing host ----------------
     - name: Get existing host (with interfaces)
