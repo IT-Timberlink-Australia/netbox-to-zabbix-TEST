@@ -7,7 +7,6 @@
     # Injected via AWX credentials or env
     zabbix_api_url: "{{ lookup('env', 'ZABBIX_API_URL') }}"
     zabbix_api_token: "{{ lookup('env', 'ZABBIX_API_TOKEN') }}"
-    snmp_community: "{{ lookup('env', 'SNMP_COMMUNITY') | default('public', true) }}"
 
     # Dry-run safety switch
     apply_changes: true
@@ -99,31 +98,109 @@
         visible_name: >-
           {{ inventory_hostname }}{% if description is defined and description|length > 0 %} - {{ description | trim }}{% endif %}
 
-    - name: Build Zabbix host tags (manufacturer/site/status + cmdb)
+    - name: Inspect common source fields for tags
+      debug:
+        msg:
+          inv_host: "{{ inventory_hostname }}"
+          ansible_network_os: "{{ ansible_network_os | default('') }}"
+          platform_obj: "{{ platform | default({}) }}"
+          platform_slug: "{{ platform.slug | default('') }}"
+          device_type: "{{ device_type | default({}) }}"
+          device_type_manufacturer: "{{ device_type.manufacturer | default({}) }}"
+          device_type_manufacturer_slug: "{{ device_type.manufacturer.slug | default('') }}"
+          manufacturer_obj: "{{ manufacturer | default({}) }}"
+          manufacturer_slug: "{{ manufacturer.slug | default('') }}"
+          custom_fields: "{{ custom_fields | default({}) }}"
+          sla_report_code_flat: "{{ sla_report_code | default('') }}"
+          sla_report_code_cf: "{{ custom_fields.sla_report_code | default('') }}"
+
+    - name: Build Zabbix host tags (robust manufacturer + SLA CF)
       set_fact:
         zabbix_tags: >-
           {%- set tags = [] -%}
-          {# manufacturer detection #}
-          {%- set plat = (ansible_network_os | default(platform, true) | default('')) | lower -%}
-          {%- set man = 'unknown' -%}
-          {%- for key,val in manufacturer_map.items() -%}
-            {%- if man == 'unknown' and (key in plat) -%}
-              {%- set man = val -%}
+
+          {# ---------------- SLA / device role code from CF ---------------- #}
+          {%- set sla_cf = sla_report_code
+              | default(custom_fields.sla_report_code, true)
+              | default('', true) -%}
+          {%- if sla_cf | string | length > 0 -%}
+            {%- set _ = tags.append({"tag": "device", "value": (sla_cf | string) }) -%}
+          {%- else -%}
+            {%- set _ = tags.append({"tag": "device", "value": "unknown"}) -%}
+          {%- endif -%}
+
+          {# ---------------- Manufacturer detection ---------------- #}
+          {# Prefer device_type.manufacturer.slug/name (most authoritative) #}
+          {%- set m_slug =
+                (device_type.manufacturer.slug
+                  | default(device_type.manufacturer.name, true)
+                  | default(manufacturer.slug, true)
+                  | default(manufacturer.name, true)
+                  | default(vendor, true)
+                  | default(oem, true)
+                  | default('', true)) | string | lower -%}
+
+          {# Platform & OS hints if manufacturer isn’t explicitly available #}
+          {%- set plat =
+                (platform.slug
+                  | default(platform.name, true)
+                  | default(platform, true)
+                  | default('', true)) | string | lower -%}
+          {%- set os = (ansible_network_os | default('')) | string | lower -%}
+
+          {%- set man = m_slug -%}
+          {%- if man == '' -%}
+            {# try platform/OS heuristics #}
+            {%- if 'aoscx' in plat or 'aruba' in plat -%}
+              {%- set man = 'aruba' -%}
+            {%- elif 'ios' in plat or 'nxos' in plat or 'cisco' in plat
+                  or 'ios' in os or 'nxos' in os or 'cisco' in os -%}
+              {%- set man = 'cisco' -%}
+            {%- elif 'forti' in plat or 'forti' in os -%}
+              {%- set man = 'fortinet' -%}
+            {%- elif 'hpe' in plat or 'hp ' in plat -%}
+              {%- set man = 'hpe' -%}
+            {%- elif 'juniper' in plat or 'junos' in os -%}
+              {%- set man = 'juniper' -%}
+            {%- elif 'unifi' in plat or 'ubiquiti' in plat -%}
+              {%- set man = 'unifi' -%}
+            {%- elif 'vmware' in plat or 'esxi' in plat or 'vmware' in os -%}
+              {%- set man = 'vmware' -%}
+            {%- elif 'windows' in plat or 'windows' in os -%}
+              {%- set man = 'microsoft' -%}
+            {%- elif 'linux' in plat or 'linux' in os -%}
+              {%- set man = 'linux' -%}
+            {%- elif 'eaton' in plat -%}
+              {%- set man = 'eaton' -%}
+            {%- elif 'apc' in plat -%}
+              {%- set man = 'apc' -%}
             {%- endif -%}
-          {%- endfor -%}
-          {%- set _ = tags.append({"tag":"manufacturer","value":man}) -%}
-          {%- if site_slug is defined and site_slug | length > 0 -%}
-            {%- set _ = tags.append({"tag":"site","value": site_slug | lower }) -%}
+          {%- endif -%}
+
+          {# If still empty and it's a VM, mark manufacturer=vm #}
+          {%- if (man == '') and ('virtual' in (device_role_slug | default(device_role, true) | string | lower)
+                                  or 'vm' in (device_role_slug | default(device_role, true) | string | lower)) -%}
+            {%- set man = 'vm' -%}
+          {%- endif -%}
+
+          {%- if man == '' -%}
+            {%- set man = 'unknown' -%}
+          {%- endif -%}
+          {%- set _ = tags.append({"tag":"manufacturer","value": man }) -%}
+
+          {# ---------------- site / status / cmdb ---------------- #}
+          {%- if site_slug is defined and site_slug | string | length > 0 -%}
+            {%- set _ = tags.append({"tag":"site","value": site_slug | string | lower }) -%}
           {%- endif -%}
           {%- set nbstat = status.value if status is mapping and status.value is defined else status -%}
-          {%- set _ = tags.append({"tag":"nb_status","value": nbstat }) -%}
+          {%- set _ = tags.append({"tag":"nb_status","value": (nbstat | string) }) -%}
           {%- set _ = tags.append({"tag":"cmdb","value":"true"}) -%}
+
           {{ tags }}
 
     - name: Set Zabbix host status (int)
       set_fact:
         zabbix_host_status: "{{ 0 if (status in ['active','Active',1,'1'] or (status.label | default('') | lower) == 'active') else 1 }}"
-
 
     # --- Interfaces as native lists ---
     - name: Set interface list for agent
@@ -144,13 +221,6 @@
         interface_list:
           - { type: 3, main: 1, useip: 1, ip: "{{ ansible_host }}", dns: "", port: "623" }
       when: interface_list is not defined
-
-    # --- Macros as native lists ---
-    - name: Set host macros for SNMP
-      set_fact:
-        host_macros:
-          - { macro: "{$SNMP_COMMUNITY}", value: "{{ snmp_community }}" }
-      when: "'snmp' in (zabbix_template_name | lower)"
 
     - name: Default empty macros
       set_fact:
@@ -206,7 +276,7 @@
               'groups': [ { 'groupid': (desired_groupid | int) } ],
               'templates': [ { 'templateid': template_id } ],
               'tags': zabbix_tags,
-              'macros': host_macros
+              'macros': "{{ host_macros | default(omit) }}"
             } | combine(proxy_field | default({}))
           }}
       when: zabbix_host_check.json.result | length == 0
@@ -222,7 +292,7 @@
               'groups': [ { 'groupid': (desired_groupid | int) } ],
               'templates': [ { 'templateid': template_id } ],
               'tags': zabbix_tags,
-              'macros': host_macros
+              'macros': "{{ host_macros | default(omit) }}"
             } | combine(proxy_field | default({}))
           }}
       when: zabbix_host_check.json.result | length > 0
