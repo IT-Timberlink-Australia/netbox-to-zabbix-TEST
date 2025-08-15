@@ -87,7 +87,8 @@
           method: "hostgroup.get"
           params:
             output: ["groupid","name"]
-            groupids: [ {{ desired_groupid | int }} ]
+            groupids:
+              - "{{ desired_groupid | int }}"
           auth: "{{ zabbix_api_token }}"
           id: 1
         validate_certs: false
