@@ -152,47 +152,42 @@
             port: "623"
       when: interface_list is not defined
 
-    # ---------------- Tags (manufacturer from platform + SLA from CF) ----------------
-    - name: Build Zabbix host tags (platform-based manufacturer + SLA CF)
+    # --- Build Zabbix host tags (OS from ansible_network_os + SLA CF) ---
+    - name: Build Zabbix host tags (OS from ansible_network_os + SLA CF)
       set_fact:
         zabbix_tags: >-
           {%- set tags = [] -%}
 
           {# SLA / device tag from CF (flattened or nested) #}
-          {%- set sla_cf = (sla_report_code if (sla_report_code is defined and (sla_report_code|string)|length > 0) else (custom_fields.sla_report_code | default(''))) | string -%}
+          {%- set sla_cf = (sla_report_code if (sla_report_code is defined and (sla_report_code|string)|length > 0)
+                            else (custom_fields.sla_report_code | default(''))) | string -%}
           {%- set _ = tags.append({"tag":"device","value": (sla_cf if sla_cf|length > 0 else "unknown") }) -%}
 
-          {# Manufacturer from platform (robust to string or mapping) #}
-          {%- set plat_raw = platform if platform is defined else None -%}
-          {%- if plat_raw is mapping -%}
-            {%- set plat_val = (plat_raw.slug | default(plat_raw.name) | default('')) | string -%}
-          {%- else -%}
-            {%- set plat_val = (plat_raw | default(ansible_network_os) | default('')) | string -%}
+          {# OS from ansible_network_os (robust to missing var) #}
+          {%- set os_raw = (ansible_network_os | default('')) | string | lower -%}
+          {%- set os_tag = 'unknown' -%}
+          {%- if 'aoscx' in os_raw or 'aruba' in os_raw -%}
+            {%- set os_tag = 'arubaos-cx' -%}
+          {%- elif 'cisco' in os_raw -%}
+            {%- set os_tag = 'cisco-ios' -%}
+          {%- elif 'forti' in os_raw -%}
+            {%- set os_tag = 'fortios' -%}
+          {%- elif 'synology' in os_raw -%}
+            {%- set os_tag = 'synology-dsm' -%}
+          {%- elif 'apc' in os_raw -%}
+            {%- set os_tag = 'apc' -%}
+          {%- elif 'eaton' in os_raw -%}
+            {%- set os_tag = 'eaton' -%}
+          {%- elif 'unifi' in os_raw or 'ubiquiti' in os_raw -%}
+            {%- set os_tag = 'unifi' -%}
+          {%- elif 'vmware' in os_raw or 'esxi' in os_raw -%}
+            {%- set os_tag = 'vmware-esxi' -%}
+          {%- elif 'windows' in os_raw -%}
+            {%- set os_tag = 'windows' -%}
+          {%- elif 'linux' in os_raw or 'debian' in os_raw or 'ubuntu' in os_raw or 'centos' in os_raw or 'redhat' in os_raw or 'rhel' in os_raw -%}
+            {%- set os_tag = 'linux' -%}
           {%- endif -%}
-          {%- set plat = plat_val | lower -%}
-          {%- set manufacturer = 'unknown' -%}
-          {%- if 'aoscx' in plat or 'aruba' in plat or 'os-cx' in plat -%}
-            {%- set manufacturer = 'aruba' -%}
-          {%- elif 'cisco' in plat -%}
-            {%- set manufacturer = 'cisco' -%}
-          {%- elif 'forti' in plat -%}
-            {%- set manufacturer = 'fortinet' -%}
-          {%- elif 'synology' in plat or 'diskstation' in plat -%}
-            {%- set manufacturer = 'synology' -%}
-          {%- elif 'apc' in plat -%}
-            {%- set manufacturer = 'apc' -%}
-          {%- elif 'eaton' in plat -%}
-            {%- set manufacturer = 'eaton' -%}
-          {%- elif 'unifi' in plat or 'ubiquiti' in plat -%}
-            {%- set manufacturer = 'unifi' -%}
-          {%- elif 'vmware' in plat or 'esxi' in plat or 'vcenter' in plat -%}
-            {%- set manufacturer = 'vmware' -%}
-          {%- elif 'windows' in plat or 'microsoft' in plat -%}
-            {%- set manufacturer = 'microsoft' -%}
-          {%- elif 'linux' in plat or 'debian' in plat or 'ubuntu' in plat or 'centos' in plat or 'redhat' in plat or 'rhel' in plat -%}
-            {%- set manufacturer = 'linux' -%}
-          {%- endif -%}
-          {%- set _ = tags.append({"tag":"manufacturer","value": manufacturer }) -%}
+          {%- set _ = tags.append({"tag":"os","value": os_tag }) -%}
 
           {# site tag #}
           {%- if site_slug is defined and (site_slug|string)|length > 0 -%}
