@@ -1,5 +1,5 @@
 ---
-- name: Sync NetBox devices/VMs to Zabbix using zabbix_group_id CF (authoritative groups + robust tags)
+- name: Sync NetBox devices/VMs to Zabbix using zabbix_group_id CF (authoritative groups + platform-based manufacturer tag)
   hosts: all
   gather_facts: false
 
@@ -19,18 +19,6 @@
           - zabbix_api_url is defined and zabbix_api_url | length > 0
           - zabbix_api_token is defined and zabbix_api_token | length > 0
         fail_msg: "ZABBIX_API_URL and/or ZABBIX_API_TOKEN are missing."
-
-    - name: Quick visibility (host inputs)
-      debug:
-        msg:
-          inv_host: "{{ inventory_hostname }}"
-          ip: "{{ ansible_host }}"
-          description: "{{ description | default('Not provided') }}"
-          template: "{{ zabbix_template_name | default('MISSING') }}"
-          zabbix_group_id_cf_flat: "{{ zabbix_group_id | default('') }}"
-          zabbix_group_id_cf_nested: "{{ custom_fields.sla_report_code | default('') }}"
-          site_slug: "{{ site_slug | default('') }}"
-          status: "{{ status | default('') }}"
 
     - name: Ensure Zabbix template name is defined
       assert:
@@ -102,14 +90,6 @@
       set_fact:
         effective_groupid: "{{ (zbx_group_lookup.json.result | length > 0) | ternary(desired_groupid | int, 5) }}"
 
-    - name: Log group resolution
-      debug:
-        msg:
-          desired_groupid: "{{ desired_groupid }}"
-          found_by_api: "{{ zbx_group_lookup.json.result | length > 0 }}"
-          effective_groupid: "{{ effective_groupid }}"
-      changed_when: false
-
     - name: Warn when falling back to default group
       debug:
         msg: "Desired group {{ desired_groupid }} not found/visible; falling back to 5 for {{ inventory_hostname }}."
@@ -172,83 +152,61 @@
             port: "623"
       when: interface_list is not defined
 
-    # ---------------- Robust tag helpers & build ----------------
-    - name: Derive SLA code and manufacturer safely
+    # ---------------- Tags (manufacturer from platform + SLA from CF) ----------------
+    - name: Build Zabbix host tags (platform-based manufacturer + SLA CF)
       set_fact:
-        nb_sla_code: >-
-          {{ (sla_report_code
-              if (sla_report_code is defined and (sla_report_code|string)|length > 0)
-              else (custom_fields.sla_report_code | default('')))
-             | string }}
+        zabbix_tags: >-
+          {%- set tags = [] -%}
 
-# --- Optional: see what we're getting for platform so you can sanity-check ---
-- name: Show platform-related inputs (for manufacturer tag)
-  debug:
-    msg:
-      platform_var: "{{ platform | default(omit) }}"
-      ansible_network_os: "{{ ansible_network_os | default(omit) }}"
-      platform_is_mapping: "{{ (platform is mapping) | ternary('yes','no') }}"
+          {# SLA / device tag from CF (flattened or nested) #}
+          {%- set sla_cf = (sla_report_code if (sla_report_code is defined and (sla_report_code|string)|length > 0) else (custom_fields.sla_report_code | default(''))) | string -%}
+          {%- set _ = tags.append({"tag":"device","value": (sla_cf if sla_cf|length > 0 else "unknown") }) -%}
 
-# --- Build Zabbix host tags (manufacturer from *platform*) ---
-- name: Build Zabbix host tags (manufacturer from platform + SLA CF)
-  set_fact:
-    zabbix_tags: >-
-      {%- set tags = [] -%}
+          {# Manufacturer from platform (robust to string or mapping) #}
+          {%- set plat_raw = platform if platform is defined else None -%}
+          {%- if plat_raw is mapping -%}
+            {%- set plat_val = (plat_raw.slug | default(plat_raw.name) | default('')) | string -%}
+          {%- else -%}
+            {%- set plat_val = (plat_raw | default(ansible_network_os) | default('')) | string -%}
+          {%- endif -%}
+          {%- set plat = plat_val | lower -%}
+          {%- set manufacturer = 'unknown' -%}
+          {%- if 'aoscx' in plat or 'aruba' in plat or 'os-cx' in plat -%}
+            {%- set manufacturer = 'aruba' -%}
+          {%- elif 'cisco' in plat -%}
+            {%- set manufacturer = 'cisco' -%}
+          {%- elif 'forti' in plat -%}
+            {%- set manufacturer = 'fortinet' -%}
+          {%- elif 'synology' in plat or 'diskstation' in plat -%}
+            {%- set manufacturer = 'synology' -%}
+          {%- elif 'apc' in plat -%}
+            {%- set manufacturer = 'apc' -%}
+          {%- elif 'eaton' in plat -%}
+            {%- set manufacturer = 'eaton' -%}
+          {%- elif 'unifi' in plat or 'ubiquiti' in plat -%}
+            {%- set manufacturer = 'unifi' -%}
+          {%- elif 'vmware' in plat or 'esxi' in plat or 'vcenter' in plat -%}
+            {%- set manufacturer = 'vmware' -%}
+          {%- elif 'windows' in plat or 'microsoft' in plat -%}
+            {%- set manufacturer = 'microsoft' -%}
+          {%- elif 'linux' in plat or 'debian' in plat or 'ubuntu' in plat or 'centos' in plat or 'redhat' in plat or 'rhel' in plat -%}
+            {%- set manufacturer = 'linux' -%}
+          {%- endif -%}
+          {%- set _ = tags.append({"tag":"manufacturer","value": manufacturer }) -%}
 
-      {# --- device/SLA tag (already working) --- #}
-      {%- if sla_report_code is defined and (sla_report_code|string)|length > 0 -%}
-        {%- set _ = tags.append({"tag": "device", "value": sla_report_code|string }) -%}
-      {%- else -%}
-        {%- set _ = tags.append({"tag": "device", "value": "unknown"}) -%}
-      {%- endif -%}
+          {# site tag #}
+          {%- if site_slug is defined and (site_slug|string)|length > 0 -%}
+            {%- set _ = tags.append({"tag":"site","value": (site_slug|string|lower) }) -%}
+          {%- endif -%}
 
-      {# --- manufacturer from platform (robust) --- #}
-      {%- set plat_raw =
-            (platform if platform is defined else None) -%}
-      {%- if plat_raw is mapping -%}
-        {%- set plat_val = (plat_raw.slug | default(plat_raw.name) | default('')) | string -%}
-      {%- else -%}
-        {%- set plat_val = (plat_raw | default(ansible_network_os) | default('')) | string -%}
-      {%- endif -%}
-      {%- set plat = plat_val | lower -%}
+          {# NetBox status #}
+          {%- set nbstat = status.value if status is mapping and status.value is defined else status -%}
+          {%- set _ = tags.append({"tag":"nb_status","value": (nbstat|string) }) -%}
 
-      {%- set manufacturer = 'unknown' -%}
-      {%- if 'aoscx' in plat or 'aruba' in plat or 'os-cx' in plat -%}
-        {%- set manufacturer = 'aruba' -%}
-      {%- elif 'cisco' in plat -%}
-        {%- set manufacturer = 'cisco' -%}
-      {%- elif 'forti' in plat -%}
-        {%- set manufacturer = 'fortinet' -%}
-      {%- elif 'synology' in plat or 'diskstation' in plat -%}
-        {%- set manufacturer = 'synology' -%}
-      {%- elif 'apc' in plat -%}
-        {%- set manufacturer = 'apc' -%}
-      {%- elif 'eaton' in plat -%}
-        {%- set manufacturer = 'eaton' -%}
-      {%- elif 'unifi' in plat or 'ubiquiti' in plat -%}
-        {%- set manufacturer = 'unifi' -%}
-      {%- elif 'vmware' in plat or 'esxi' in plat or 'vcenter' in plat -%}
-        {%- set manufacturer = 'vmware' -%}
-      {%- elif 'windows' in plat or 'microsoft' in plat -%}
-        {%- set manufacturer = 'microsoft' -%}
-      {%- elif 'linux' in plat or 'debian' in plat or 'ubuntu' in plat or 'centos' in plat or 'redhat' in plat or 'rhel' in plat -%}
-        {%- set manufacturer = 'linux' -%}
-      {%- endif -%}
-      {%- set _ = tags.append({"tag": "manufacturer", "value": manufacturer}) -%}
+          {# cmdb flag #}
+          {%- set _ = tags.append({"tag":"cmdb","value":"true"}) -%}
 
-      {# --- site tag --- #}
-      {%- if site_slug is defined and (site_slug|string)|length > 0 -%}
-        {%- set _ = tags.append({"tag": "site", "value": (site_slug|string)|lower}) -%}
-      {%- endif -%}
-
-      {# --- NetBox status --- #}
-      {%- set nbstat = status.value if status is mapping and status.value is defined else status -%}
-      {%- set _ = tags.append({"tag": "nb_status", "value": nbstat|string }) -%}
-
-      {# --- cmdb flag --- #}
-      {%- set _ = tags.append({"tag": "cmdb", "value": "true"}) -%}
-
-      {{ tags }}
+          {{ tags }}
 
     # ---------------- Read existing host ----------------
     - name: Get existing host (with interfaces)
