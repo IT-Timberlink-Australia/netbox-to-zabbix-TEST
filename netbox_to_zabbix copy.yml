@@ -114,6 +114,49 @@
           sla_report_code_flat: "{{ sla_report_code | default('') }}"
           sla_report_code_cf: "{{ custom_fields.sla_report_code | default('') }}"
 
+    - name: Derive SLA code and manufacturer safely
+      set_fact:
+        nb_sla_code: >-
+          {{ (sla_report_code
+              if (sla_report_code is defined and (sla_report_code|string)|length > 0)
+              else (custom_fields.sla_report_code | default('')))
+            | string }}
+        nb_manufacturer: >-
+          {# 1) device_type.manufacturer.slug/name (most authoritative) #}
+          {% set man = '' %}
+          {% if device_type is defined and device_type and
+                (device_type.manufacturer is defined) and device_type.manufacturer %}
+            {% set man = (device_type.manufacturer.slug
+                          | default(device_type.manufacturer.name, true)
+                          | string | lower) %}
+          {% endif %}
+
+          {# 2) fallback: manufacturer obj on host, if present #}
+          {% if man == '' and manufacturer is defined and manufacturer %}
+            {% set man = (manufacturer.slug | default(manufacturer.name, true) | string | lower) %}
+          {% endif %}
+
+          {# 3) fallback: platform/OS heuristics #}
+          {% if man == '' %}
+            {% set p = (platform.slug
+                        | default(platform.name, true)
+                        | default(platform, true)
+                        | default('', true)) | string | lower %}
+            {% set os = (ansible_network_os | default('')) | string | lower %}
+            {% if 'aoscx' in p or 'aruba' in p %}{% set man = 'aruba' %}
+            {% elif 'cisco' in p or 'ios' in p or 'nxos' in p or 'cisco' in os or 'ios' in os or 'nxos' in os %}{% set man = 'cisco' %}
+            {% elif 'forti' in p or 'forti' in os %}{% set man = 'fortinet' %}
+            {% elif 'juniper' in p or 'junos' in os %}{% set man = 'juniper' %}
+            {% elif 'vmware' in p or 'esxi' in p or 'vmware' in os %}{% set man = 'vmware' %}
+            {% elif 'windows' in p or 'windows' in os %}{% set man = 'microsoft' %}
+            {% elif 'linux' in p or 'linux' in os %}{% set man = 'linux' %}
+            {% elif 'eaton' in p %}{% set man = 'eaton' %}
+            {% elif 'apc' in p %}{% set man = 'apc' %}
+            {% endif %}
+          {% endif %}
+
+          {{ man if man != '' else 'unknown' }}
+
     - name: Build Zabbix host tags (robust manufacturer + SLA CF)
       set_fact:
         zabbix_tags: >-
