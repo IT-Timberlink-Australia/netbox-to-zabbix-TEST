@@ -80,13 +80,14 @@
       uri:
         url: "{{ zabbix_api_url }}"
         method: POST
-        headers: { Content-Type: "application/json" }
+        headers:
+          Content-Type: "application/json"
         body_format: json
         body:
           jsonrpc: "2.0"
           method: "hostgroup.get"
           params:
-            output: ["groupid","name"]
+            output: ["groupid", "name"]
             groupids:
               - "{{ desired_groupid | int }}"
           auth: "{{ zabbix_api_token }}"
