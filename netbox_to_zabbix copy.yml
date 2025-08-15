@@ -152,8 +152,8 @@
             port: "623"
       when: interface_list is not defined
 
-    # --- Build Zabbix host tags (OS from ansible_network_os + SLA CF) ---
-    - name: Build Zabbix host tags (OS from ansible_network_os + SLA CF)
+    # --- Build Zabbix host tags (OS from ansible_network_os + SLA CF + Environment CF) ---
+    - name: Build Zabbix host tags (OS from ansible_network_os + SLA CF + Environment CF)
       set_fact:
         zabbix_tags: >-
           {%- set tags = [] -%}
@@ -188,6 +188,13 @@
             {%- set os_tag = 'linux' -%}
           {%- endif -%}
           {%- set _ = tags.append({"tag":"os","value": os_tag }) -%}
+
+          {# Environment from CF (flattened or nested) #}
+          {%- set env_cf = (environment if (environment is defined and (environment|string)|length > 0)
+                            else (custom_fields.environment | default(''))) | string -%}
+          {%- if env_cf | length > 0 -%}
+            {%- set _ = tags.append({"tag":"environment","value": env_cf }) -%}
+          {%- endif -%}
 
           {# site tag #}
           {%- if site_slug is defined and (site_slug|string)|length > 0 -%}
