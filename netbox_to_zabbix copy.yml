@@ -11,11 +11,6 @@
     # Dry-run switch
     apply_changes: true
 
-    # Optional proxy mapping (only used if provided via AWX extra vars)
-    # site_to_proxy_mapping:
-    #   _default: ""
-    #   "101": "12345"
-
   tasks:
     # ---------------- Preconditions ----------------
     - name: Verify required env vars present
@@ -32,7 +27,7 @@
           ip: "{{ ansible_host }}"
           description: "{{ description | default('Not provided') }}"
           template: "{{ zabbix_template_name | default('MISSING') }}"
-          zabbix_group_id_cf: "{{ zabbix_group_id | default('') }}"
+          zabbix_group_id_cf_flat: "{{ zabbix_group_id | default('') }}"
           zabbix_group_id_cf_nested: "{{ custom_fields.sla_report_code | default('') }}"
           site_slug: "{{ site_slug | default('') }}"
           status: "{{ status | default('') }}"
@@ -49,14 +44,19 @@
       uri:
         url: "{{ zabbix_api_url }}"
         method: POST
-        headers: { Content-Type: "application/json" }
+        headers:
+          Content-Type: "application/json"
         body_format: json
         body:
           jsonrpc: "2.0"
           method: "template.get"
           params:
-            output: ["templateid","host"]
-            filter: { host: ["{{ zabbix_template_name }}"] }
+            output:
+              - templateid
+              - host
+            filter:
+              host:
+                - "{{ zabbix_template_name }}"
             searchWildcardsEnabled: 0
           auth: "{{ zabbix_api_token }}"
           id: 1
@@ -87,7 +87,9 @@
           jsonrpc: "2.0"
           method: "hostgroup.get"
           params:
-            output: ["groupid", "name"]
+            output:
+              - groupid
+              - name
             groupids:
               - "{{ desired_groupid | int }}"
           auth: "{{ zabbix_api_token }}"
@@ -100,12 +102,20 @@
       set_fact:
         effective_groupid: "{{ (zbx_group_lookup.json.result | length > 0) | ternary(desired_groupid | int, 5) }}"
 
+    - name: Log group resolution
+      debug:
+        msg:
+          desired_groupid: "{{ desired_groupid }}"
+          found_by_api: "{{ zbx_group_lookup.json.result | length > 0 }}"
+          effective_groupid: "{{ effective_groupid }}"
+      changed_when: false
+
     - name: Warn when falling back to default group
       debug:
         msg: "Desired group {{ desired_groupid }} not found/visible; falling back to 5 for {{ inventory_hostname }}."
       when: effective_groupid | int != desired_groupid | int
 
-    # ---------------- Proxy (optional) ----------------
+    # ---------------- Proxy (optional; only if mapping provided) ----------------
     - name: Determine proxy ID (if mapping provided)
       set_fact:
         proxy_id: "{{ site_to_proxy_mapping[site_id | string] | default(site_to_proxy_mapping['_default'] | default('')) | string }}"
@@ -129,23 +139,40 @@
     - name: Set interface list for agent
       set_fact:
         interface_list:
-          - { type: 1, main: 1, useip: 1, ip: "{{ ansible_host }}", dns: "", port: "10050" }
+          - type: 1
+            main: 1
+            useip: 1
+            ip: "{{ ansible_host }}"
+            dns: ""
+            port: "10050"
       when: "'agent' in (zabbix_template_name | lower)"
 
     - name: Set interface list for SNMP (uses global {$SNMP_COMMUNITY})
       set_fact:
         interface_list:
-          - { type: 2, main: 1, useip: 1, ip: "{{ ansible_host }}", dns: "", port: "161",
-              details: { version: 2, community: "{$SNMP_COMMUNITY}" } }
+          - type: 2
+            main: 1
+            useip: 1
+            ip: "{{ ansible_host }}"
+            dns: ""
+            port: "161"
+            details:
+              version: 2
+              community: "{$SNMP_COMMUNITY}"
       when: "'snmp' in (zabbix_template_name | lower)"
 
     - name: Set interface list for IPMI (fallback)
       set_fact:
         interface_list:
-          - { type: 3, main: 1, useip: 1, ip: "{{ ansible_host }}", dns: "", port: "623" }
+          - type: 3
+            main: 1
+            useip: 1
+            ip: "{{ ansible_host }}"
+            dns: ""
+            port: "623"
       when: interface_list is not defined
 
-    # ---------------- Robust tag helpers & tag build ----------------
+    # ---------------- Robust tag helpers & build ----------------
     - name: Derive SLA code and manufacturer safely
       set_fact:
         nb_sla_code: >-
@@ -200,15 +227,29 @@
       uri:
         url: "{{ zabbix_api_url }}"
         method: POST
-        headers: { Content-Type: "application/json" }
+        headers:
+          Content-Type: "application/json"
         body_format: json
         body:
           jsonrpc: "2.0"
           method: "host.get"
           params:
-            output: ["hostid","name","proxy_hostid","status"]
-            selectInterfaces: ["interfaceid","type","ip","dns","port","main","useip","details"]
-            filter: { host: "{{ inventory_hostname }}" }
+            output:
+              - hostid
+              - name
+              - proxy_hostid
+              - status
+            selectInterfaces:
+              - interfaceid
+              - type
+              - ip
+              - dns
+              - port
+              - main
+              - useip
+              - details
+            filter:
+              host: "{{ inventory_hostname }}"
           auth: "{{ zabbix_api_token }}"
           id: 1
         validate_certs: false
@@ -228,7 +269,6 @@
               'groups': [ { 'groupid': (effective_groupid | int) } ],
               'templates': [ { 'templateid': template_id } ],
               'tags': zabbix_tags
-              # 'macros': omit (we rely on global {$SNMP_COMMUNITY})
             } | combine(proxy_field | default({}))
           }}
       when: zabbix_host_check.json.result | length == 0
@@ -244,7 +284,6 @@
               'groups': [ { 'groupid': (effective_groupid | int) } ],
               'templates': [ { 'templateid': template_id } ],
               'tags': zabbix_tags
-              # 'macros': omit
             } | combine(proxy_field | default({}))
           }}
       when: zabbix_host_check.json.result | length > 0
@@ -260,7 +299,8 @@
           uri:
             url: "{{ zabbix_api_url }}"
             method: POST
-            headers: { Content-Type: "application/json" }
+            headers:
+              Content-Type: "application/json"
             body_format: json
             body:
               jsonrpc: "2.0"
@@ -287,7 +327,8 @@
       uri:
         url: "{{ zabbix_api_url }}"
         method: POST
-        headers: { Content-Type: "application/json" }
+        headers:
+          Content-Type: "application/json"
         body_format: json
         body:
           jsonrpc: "2.0"
@@ -305,7 +346,8 @@
       uri:
         url: "{{ zabbix_api_url }}"
         method: POST
-        headers: { Content-Type: "application/json" }
+        headers:
+          Content-Type: "application/json"
         body_format: json
         body:
           jsonrpc: "2.0"
