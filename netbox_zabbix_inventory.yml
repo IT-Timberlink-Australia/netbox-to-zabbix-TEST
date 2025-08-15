@@ -15,7 +15,7 @@ compose:
   description: "description"
   sla_report_code: "custom_fields.sla_report_code | default('')"
   zabbix_template: "custom_fields.zabbix_template_name | default('')"
-  enviroment: "custom_fields.enviroment | default('')"
+  enviroment: "custom_fields.environment | default('')"
 
 query_filters:
   - status: active
@@ -24,11 +24,11 @@ query_filters:
   - platform__isnull: 'false'
   - custom_fields__zabbix_template_name__empty: 'false'
   - custom_fields__sla_report_code__isnull: 'false'
-  - custom_fields__enviroment__isnull: 'false'
+  - custom_fields__environment__isnull: 'false'
 
 group_by:
   - sites
   - device_roles
   - platforms
   - tags
-  - enviroment
+  - environment
