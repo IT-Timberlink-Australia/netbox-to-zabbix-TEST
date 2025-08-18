@@ -13,7 +13,9 @@ compose:
   device_role: "device_role.name"
   tags: "tags | map(attribute='name') | list"
   description: "description"
-  extra_zabbix_templates: "custom_fields.extra_zabbix_templates | default([])"
+  extra_zabbix_templates: >
+    {%- set v = custom_fields.extra_zabbix_templates | default([]) -%}
+    {{ (v if v is sequence else (v|string).split(',')) | map('trim') | reject('equalto','') | list }}
 
 query_filters:
   - status: active
