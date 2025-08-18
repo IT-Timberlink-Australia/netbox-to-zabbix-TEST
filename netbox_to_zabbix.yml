@@ -297,18 +297,18 @@
       delegate_to: localhost
       register: zabbix_host_check
 
-    - name: Normalize host.get result length for later conditions
+    - name: Normalize host.get result into booleans
       set_fact:
-        _host_result_len: >-
+        host_exists: >-
           {{
-            (zabbix_host_check.json.result | length)
-            if (zabbix_host_check is defined and
-                zabbix_host_check.json is defined and
-                zabbix_host_check.json.result is defined)
-            else 0
+            (zabbix_host_check is defined)
+            and (zabbix_host_check.json is defined)
+            and (zabbix_host_check.json.result is defined)
+            and ((zabbix_host_check.json.result | length | int) > 0)
           }}
+        host_missing: "{{ not host_exists }}"
 
-    # ---------------- Build params ----------------
+    # Build params for CREATE
     - name: Build Zabbix host create params
       set_fact:
         zabbix_create_params: >-
@@ -323,8 +323,9 @@
               'tags': zabbix_tags
             } | combine(proxy_field | default({}))
           }}
-      when: _host_result_len == 0
+      when: host_missing | bool
 
+    # Build params for UPDATE
     - name: Build Zabbix host update params (REPLACE groups; authoritative template set)
       set_fact:
         zabbix_update_params: >-
@@ -338,7 +339,7 @@
               'tags': zabbix_tags
             } | combine(proxy_field | default({}))
           }}
-      when: _host_result_len > 0
+      when: host_exists | bool
 
     # ---------------- Optional: reconcile main interface ----------------
     - name: Reconcile main interface if host exists (simple replace on change)
