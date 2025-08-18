@@ -122,6 +122,15 @@
           {%- endif -%}
           {{ ids | unique }}
 
+    - name: Build template objects (primary + extras)
+      set_fact:
+        _template_objs: >-
+          {%- set out = [] -%}
+          {%- for id in _template_ids_full -%}
+            {%- set _ = out.append({'templateid': (id|string)}) -%}
+          {%- endfor -%}
+          {{ out }}
+
     - name: Build Zabbix host create params
       set_fact:
         zabbix_create_params: >-
@@ -132,15 +141,13 @@
               'status': (zabbix_host_status | int),
               'interfaces': interface_list,
               'groups': [ { 'groupid': (effective_groupid | int) } ],
-              'templates': (_template_ids_full
-                            | map('regex_replace','^(.*)$','{"templateid": "\\1"}')
-                            | map('from_yaml') | list),
+              'templates': _template_objs,
               'tags': zabbix_tags
             } | combine(proxy_field | default({}))
           }}
       when: zabbix_host_check.json.result | length == 0
 
-    - name: Build Zabbix host update params (REPLACE groups; MERGE templates set you computed)
+    - name: Build Zabbix host update params (REPLACE groups; send merged templates)
       set_fact:
         zabbix_update_params: >-
           {{
@@ -149,9 +156,7 @@
               'name': visible_name,
               'status': (zabbix_host_status | int),
               'groups': [ { 'groupid': (effective_groupid | int) } ],
-              'templates': (_template_ids_full
-                            | map('regex_replace','^(.*)$','{"templateid": "\\1"}')
-                            | map('from_yaml') | list),
+              'templates': _template_objs,
               'tags': zabbix_tags
             } | combine(proxy_field | default({}))
           }}
