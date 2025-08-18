@@ -147,7 +147,7 @@
       delegate_to: localhost
       register: zabbix_host_check
 
-    - name: Normalize host.get result into booleans
+    - name: Set host_exists fact
       set_fact:
         host_exists: >-
           {{
@@ -158,7 +158,11 @@
               and (zabbix_host_check.json.result | length > 0)
             ) | bool
           }}
+
+    - name: Set host_missing as inverse of host_exists
+      set_fact:
         host_missing: "{{ not host_exists }}"
+
 
     # ---------------- Build params for create/update ----------------
     - name: Build Zabbix host create params
