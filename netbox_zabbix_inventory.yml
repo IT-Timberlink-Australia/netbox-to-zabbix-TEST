@@ -13,6 +13,8 @@ compose:
   device_role: "device_role.name"
   tags: "tags | map(attribute='name') | list"
   description: "description"
+  extra_zabbix_templates: >-
+      {{ custom_fields.extra_zabbix_templates | default([]) }}
 
 query_filters:
   - status: active
