@@ -57,19 +57,25 @@
         _extra_tpl_names: >-
           {%- set out = [] -%}
           {%- if _raw_extra_tpls is string -%}
-            {# handle '[]', "['A','B']", 'A,B', 'A;B', etc. #}
-            {%- set s = _raw_extra_tpls
-                        | replace('[',' ')
-                        | replace(']',' ')
-                        | replace('\"',' ')
-                        | replace(\"'\",' ')
-                        | replace(';', ',') -%}
-            {%- for part in s.split(',') -%}
-              {%- set name = part | trim -%}
-              {%- if name|length > 0 -%}
-                {%- set _ = out.append(name) -%}
-              {%- endif -%}
-            {%- endfor -%}
+            {# Handle "", "[]", "['A','B']", "A,B", "A;B" #}
+            {%- set s = _raw_extra_tpls | trim -%}
+            {%- if s.startswith('[') and s.endswith(']') -%}
+              {# Looks like YAML/JSON-ish list: parse it #}
+              {%- set lst = (s | from_yaml) -%}
+              {%- for x in lst -%}
+                {%- if x is string and x|trim|length > 0 -%}
+                  {%- set _ = out.append(x|trim) -%}
+                {%- endif -%}
+              {%- endfor -%}
+            {%- else -%}
+              {# Comma/semicolon separated string #}
+              {%- for part in s.replace(';', ',').split(',') -%}
+                {%- set name = part | trim -%}
+                {%- if name|length > 0 -%}
+                  {%- set _ = out.append(name) -%}
+                {%- endif -%}
+              {%- endfor -%}
+            {%- endif -%}
           {%- elif _raw_extra_tpls is sequence -%}
             {%- for x in _raw_extra_tpls -%}
               {%- if x is string and x|trim|length > 0 -%}
@@ -147,7 +153,7 @@
           }}
       when: zabbix_host_check.json.result | length == 0
 
-    - name: Build Zabbix host update params (REPLACE groups; send merged templates)
+    - name: Build Zabbix host update params
       set_fact:
         zabbix_update_params: >-
           {{
