@@ -103,6 +103,20 @@
       register: zbx_extra_tpl_lookup
       when: _extra_tpl_names | length > 0
 
+    - name: Debug extra template names
+      debug:
+        msg: "Normalized extra template names: {{ _extra_tpl_names }}"
+      when: _extra_tpl_names | length > 0
+
+    - name: Debug extra template lookup result
+      debug:
+        var: zbx_extra_tpl_lookup.json.result
+      when: zbx_extra_tpl_lookup is defined and zbx_extra_tpl_lookup.json.result is defined
+
+    - name: Debug template objects to be applied
+      debug:
+        var: _template_objs
+
     # ---------------- Build full template list ----------------
     - name: Build full template id set (primary + extras)
       set_fact:
