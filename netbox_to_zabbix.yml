@@ -6,7 +6,7 @@
   vars:
     zabbix_api_url: "{{ lookup('env', 'ZABBIX_API_URL') }}"
     zabbix_api_token: "{{ lookup('env', 'ZABBIX_API_TOKEN') }}"
-    apply_changes: true
+    apply_changes: false
 
   tasks:
     # ---------------- Preconditions ----------------
@@ -297,6 +297,17 @@
       delegate_to: localhost
       register: zabbix_host_check
 
+    - name: Normalize host.get result length for later conditions
+      set_fact:
+        _host_result_len: >-
+          {{
+            (zabbix_host_check.json.result | length)
+            if (zabbix_host_check is defined and
+                zabbix_host_check.json is defined and
+                zabbix_host_check.json.result is defined)
+            else 0
+          }}
+
     # ---------------- Build params ----------------
     - name: Build Zabbix host create params
       set_fact:
@@ -312,9 +323,7 @@
               'tags': zabbix_tags
             } | combine(proxy_field | default({}))
           }}
-      when: (zabbix_host_check.json is defined) and
-            (zabbix_host_check.json.result is defined) and
-            (zabbix_host_check.json.result | length) == 0
+      when: _host_result_len == 0
 
     - name: Build Zabbix host update params (REPLACE groups; authoritative template set)
       set_fact:
@@ -329,9 +338,7 @@
               'tags': zabbix_tags
             } | combine(proxy_field | default({}))
           }}
-      when: (zabbix_host_check.json is defined) and
-            (zabbix_host_check.json.result is defined) and
-            (zabbix_host_check.json.result | length) > 0
+      when: _host_result_len > 0
 
     # ---------------- Optional: reconcile main interface ----------------
     - name: Reconcile main interface if host exists (simple replace on change)
