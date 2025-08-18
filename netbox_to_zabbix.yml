@@ -1,5 +1,5 @@
 ---
-- name: Sync NetBox devices/VMs to Zabbix (CF groups, extra templates, robust tags)
+- name: Sync NetBox devices/VMs to Zabbix (CF groups, tags, proxy, groupid)
   hosts: all
   gather_facts: false
 
@@ -9,7 +9,6 @@
     apply_changes: false
 
   tasks:
-    # Preconditions
     - name: Verify required env vars present
       assert:
         that:
@@ -24,38 +23,6 @@
           - zabbix_template_name | length > 0
         fail_msg: "Missing Zabbix template name for {{ inventory_hostname }}"
 
-    # Get existing host
-    - name: Get existing host (with interfaces)
-      uri:
-        url: "{{ zabbix_api_url }}"
-        method: POST
-        headers: { Content-Type: "application/json" }
-        body_format: json
-        body:
-          jsonrpc: "2.0"
-          method: "host.get"
-          params:
-            output: ["hostid", "name", "proxy_hostid", "status"]
-            selectInterfaces: ["interfaceid", "type", "ip", "dns", "port", "main", "useip", "details"]
-            filter: { host: ["{{ inventory_hostname }}"] }
-          auth: "{{ zabbix_api_token }}"
-          id: 1
-        validate_certs: false
-      delegate_to: localhost
-      register: zabbix_host_check
-
-    - name: Set host existence flags
-      set_fact:
-        host_exists: >-
-          {{
-            (zabbix_host_check is defined)
-            and (zabbix_host_check.json is defined)
-            and (zabbix_host_check.json.result is defined)
-            and ((zabbix_host_check.json.result | length | int) > 0)
-          }}
-        host_missing: "{{ not host_exists }}"
-
-    # Primary template
     - name: Lookup primary Zabbix template ID by exact name
       uri:
         url: "{{ zabbix_api_url }}"
@@ -82,75 +49,11 @@
       set_fact:
         template_id: "{{ zabbix_template_lookup.json.result[0].templateid }}"
 
-    # Extra templates
-    - name: Normalize extra_zabbix_templates
-      set_fact:
-        _raw_extra_tpls: "{{ extra_zabbix_templates | default([]) }}"
-        _extra_tpl_names: >-
-          {%- set out = [] -%}
-          {%- if _raw_extra_tpls is string -%}
-            {%- set s = _raw_extra_tpls.replace('[',' ').replace(']',' ').replace('"',' ').replace("'",' ').replace(';', ',') -%}
-            {%- for part in s.split(',') -%}
-              {%- set name = part | trim -%}
-              {%- if name|length > 0 -%}
-                {%- set _ = out.append(name) -%}
-              {%- endif -%}
-            {%- endfor -%}
-          {%- elif _raw_extra_tpls is sequence -%}
-            {%- for x in _raw_extra_tpls -%}
-              {%- if x is string and x|trim|length > 0 -%}
-                {%- set _ = out.append(x|trim) -%}
-              {%- elif x is mapping and x.name is defined and (x.name|string)|trim|length > 0 -%}
-                {%- set _ = out.append((x.name|string)|trim) -%}
-              {%- endif -%}
-            {%- endfor -%}
-          {%- endif -%}
-          {{ out }}
-
-    - name: Lookup extra template IDs
-      uri:
-        url: "{{ zabbix_api_url }}"
-        method: POST
-        headers: { Content-Type: "application/json" }
-        body_format: json
-        body:
-          jsonrpc: "2.0"
-          method: "template.get"
-          params:
-            output: ["templateid", "host"]
-            filter:
-              host: "{{ _extra_tpl_names }}"
-          auth: "{{ zabbix_api_token }}"
-          id: 1
-        validate_certs: false
-      delegate_to: localhost
-      register: zbx_extra_tpl_lookup
-      when: _extra_tpl_names | length > 0
-
-    - name: Merge template IDs
-      set_fact:
-        _template_ids_full: >-
-          {%- set ids = [ (template_id|string) ] -%}
-          {%- if zbx_extra_tpl_lookup is defined and zbx_extra_tpl_lookup.json.result is defined -%}
-            {%- for t in zbx_extra_tpl_lookup.json.result -%}
-              {%- if t.templateid is defined -%}
-                {%- set _ = ids.append(t.templateid|string) -%}
-              {%- endif -%}
-            {%- endfor -%}
-          {%- endif -%}
-          {{ ids | unique }}
-
-    - name: Build template object list
-      set_fact:
-        _template_objs: >-
-          [ {% for id in _template_ids_full %} {"templateid": "{{ id }}"} {% if not loop.last %}, {% endif %} {% endfor %} ]
-
-    # Group logic
-    - name: Compute desired group ID
+    - name: Compute desired group id from NetBox CF (int; fallback to 5)
       set_fact:
         desired_groupid: "{{ (zabbix_group_id | default(5)) | int }}"
 
-    - name: Verify desired group exists
+    - name: Verify desired host group exists and is visible
       uri:
         url: "{{ zabbix_api_url }}"
         method: POST
@@ -161,19 +64,19 @@
           method: "hostgroup.get"
           params:
             output: ["groupid", "name"]
-            groupids: [ "{{ desired_groupid }}" ]
+            groupids:
+              - "{{ desired_groupid }}"
           auth: "{{ zabbix_api_token }}"
           id: 1
         validate_certs: false
       delegate_to: localhost
       register: zbx_group_lookup
 
-    - name: Set effective groupid
+    - name: Determine effective group id
       set_fact:
         effective_groupid: "{{ (zbx_group_lookup.json.result | length > 0) | ternary(desired_groupid, 5) }}"
 
-    # Proxy logic
-    - name: Determine proxy ID
+    - name: Determine proxy ID (if mapping provided)
       set_fact:
         proxy_id: "{{ site_to_proxy_mapping[site_id|string] | default(site_to_proxy_mapping['_default'] | default('')) }}"
       when: site_to_proxy_mapping is defined
@@ -183,20 +86,30 @@
         proxy_field: "{{ (proxy_id | length > 0) | ternary({'proxy_hostid': proxy_id}, {}) }}"
       when: proxy_id is defined
 
-    # Interfaces
-    - name: Set interface list
-      set_fact:
-        interface_list:
-          - type: "{{ 2 if 'snmp' in zabbix_template_name | lower else 1 }}"
-            main: 1
-            useip: 1
-            ip: "{{ ansible_host }}"
-            dns: ""
-            port: "{{ '161' if 'snmp' in zabbix_template_name | lower else '10050' }}"
-            details: >-
-              {{ {'version': 2, 'community': '{$SNMP_COMMUNITY}'} if 'snmp' in zabbix_template_name | lower else omit }}
+    - name: Get existing host
+      uri:
+        url: "{{ zabbix_api_url }}"
+        method: POST
+        headers: { Content-Type: "application/json" }
+        body_format: json
+        body:
+          jsonrpc: "2.0"
+          method: "host.get"
+          params:
+            output: ["hostid", "interfaces", "status"]
+            filter:
+              host: ["{{ inventory_hostname }}"]
+          auth: "{{ zabbix_api_token }}"
+          id: 1
+        validate_certs: false
+      delegate_to: localhost
+      register: zabbix_host_check
 
-    # Visible name and tags
+    - name: Set host existence flags
+      set_fact:
+        host_exists: "{{ zabbix_host_check.json.result | length > 0 }}"
+        host_missing: "{{ not host_exists }}"
+
     - name: Set tags and visible name
       set_fact:
         visible_name: >-
@@ -204,7 +117,7 @@
         zabbix_tags: >-
           {%- set tags = [] -%}
           {%- set sla = sla_report_code | default(custom_fields.sla_report_code | default('unknown')) -%}
-          {%- set _ = tags.append({'tag': 'device', 'value': sla|string }) -%}
+          {%- set _ = tags.append({"tag": "device", "value": sla|string }) -%}
 
           {%- set os_raw = ansible_network_os | default('') | lower -%}
           {%- set os_map = {
@@ -218,24 +131,36 @@
             'centos': 'linux', 'redhat': 'linux', 'rhel': 'linux'
           } -%}
           {%- set os_tag = os_map[os_map.keys() | select('in', os_raw) | list | first] | default('unknown') -%}
-          {%- set _ = tags.append({'tag': 'os', 'value': os_tag }) -%}
+          {%- set _ = tags.append({"tag": "os", "value": os_tag }) -%}
 
           {%- set env = environment | default(custom_fields.environment | default('')) -%}
           {%- if env | length > 0 -%}
-            {%- set _ = tags.append({'tag': 'environment', 'value': env }) -%}
+            {%- set _ = tags.append({"tag": "environment", "value": env }) -%}
           {%- endif -%}
 
           {%- if site_slug is defined -%}
-            {%- set _ = tags.append({'tag': 'site', 'value': site_slug|string|lower }) -%}
+            {%- set _ = tags.append({"tag": "site", "value": site_slug|string|lower }) -%}
           {%- endif -%}
 
           {%- set nbstat = status.value if status is mapping else status -%}
-          {%- set _ = tags.append({'tag': 'nb_status', 'value': nbstat|string }) -%}
-          {%- set _ = tags.append({'tag': 'cmdb', 'value': 'true'}) -%}
+          {%- set _ = tags.append({"tag": "nb_status", "value": nbstat|string }) -%}
+
+          {%- set _ = tags.append({"tag": "cmdb", "value": "true" }) -%}
           {{ tags }}
 
-    # Create / update host
-    - name: Build create params
+    - name: Set interface list
+      set_fact:
+        interface_list:
+          - type: "{{ 2 if 'snmp' in zabbix_template_name | lower else 1 }}"
+            main: 1
+            useip: 1
+            ip: "{{ ansible_host }}"
+            dns: ""
+            port: "{{ '161' if 'snmp' in zabbix_template_name | lower else '10050' }}"
+            details: >-
+              {{ {"version": 2, "community": "{$SNMP_COMMUNITY}"} if 'snmp' in zabbix_template_name | lower else omit }}
+
+    - name: Set create params
       set_fact:
         zabbix_create_params: >-
           {{ {
@@ -244,12 +169,12 @@
             'status': 0,
             'interfaces': interface_list,
             'groups': [ {'groupid': effective_groupid} ],
-            'templates': _template_objs,
+            'templates': [ {'templateid': template_id } ],
             'tags': zabbix_tags
           } | combine(proxy_field | default({})) }}
       when: host_missing
 
-    - name: Build update params
+    - name: Set update params
       set_fact:
         zabbix_update_params: >-
           {{ {
@@ -257,12 +182,12 @@
             'name': visible_name,
             'status': 0,
             'groups': [ {'groupid': effective_groupid} ],
-            'templates': _template_objs,
+            'templates': [ {'templateid': template_id } ],
             'tags': zabbix_tags
           } | combine(proxy_field | default({})) }}
       when: host_exists
 
-    - name: Create Zabbix host
+    - name: Create host
       uri:
         url: "{{ zabbix_api_url }}"
         method: POST
@@ -280,7 +205,7 @@
         - host_missing
         - apply_changes
 
-    - name: Update Zabbix host
+    - name: Update host
       uri:
         url: "{{ zabbix_api_url }}"
         method: POST
@@ -298,7 +223,7 @@
         - host_exists
         - apply_changes
 
-    - name: Dry run log
+    - name: Dry run message
       debug:
-        msg: "Dry-run only. Set apply_changes=true to push to Zabbix."
+        msg: "apply_changes=false → dry run only; no host changes pushed"
       when: not apply_changes
