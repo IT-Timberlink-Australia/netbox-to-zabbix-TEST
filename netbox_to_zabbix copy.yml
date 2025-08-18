@@ -51,21 +51,48 @@
       set_fact:
         template_id: "{{ zabbix_template_lookup.json.result[0].templateid }}"
 
-    # --- Extra templates: normalize names from CF (list OR comma string) ---
+    # --- NORMALIZE extra_zabbix_templates TO A CLEAN NAME LIST ---
     - name: Normalize extra_zabbix_templates into a list of names
       set_fact:
-        extra_tpl_names_raw: "{{ extra_zabbix_templates | default([]) }}"
+        _raw_extra_tpls: "{{ extra_zabbix_templates | default([]) }}"
+        _extra_tpl_names: >-
+          {%- set out = [] -%}
+          {%- if _raw_extra_tpls is string -%}
+            {# handle '[]', "['A','B']", 'A,B', 'A;B', etc. #}
+            {%- set s = _raw_extra_tpls
+                        | replace('[',' ')
+                        | replace(']',' ')
+                        | replace('\"',' ')
+                        | replace(\"'\",' ')
+                        | replace(';', ',') -%}
+            {%- for part in s.split(',') -%}
+              {%- set name = part | trim -%}
+              {%- if name|length > 0 -%}
+                {%- set _ = out.append(name) -%}
+              {%- endif -%}
+            {%- endfor -%}
+          {%- elif _raw_extra_tpls is sequence -%}
+            {%- for x in _raw_extra_tpls -%}
+              {%- if x is string and x|trim|length > 0 -%}
+                {%- set _ = out.append(x|trim) -%}
+              {%- elif x is mapping and x.name is defined and (x.name|string)|trim|length > 0 -%}
+                {%- set _ = out.append((x.name|string)|trim) -%}
+              {%- endif -%}
+            {%- endfor -%}
+          {%- endif -%}
+          {{ out }}
+      vars:
+        extra_zabbix_templates: "{{ extra_zabbix_templates | default([]) }}"
+      changed_when: false
 
-    - name: Canonicalize extra template names (list of strings)
-      set_fact:
-        extra_tpl_names: >-
-          {% if extra_tpl_names_raw is string %}
-          {{ extra_tpl_names_raw.split(',') | map('trim') | reject('equalto','') | list }}
-          {% else %}
-          {{ (extra_tpl_names_raw | list | map('string') | map('trim') | reject('equalto','') | list) }}
-          {% endif %}
+    - name: Debug normalized extra template names (once)
+      debug:
+        msg: "Extra template names requested: {{ _extra_tpl_names }}"
+      when: _extra_tpl_names | length > 0
+      run_once: true
 
-    - name: Lookup extra template IDs by name
+    # --- LOOKUP EXTRA TEMPLATE IDS (only if we have names) ---
+    - name: Lookup extra Zabbix template IDs
       uri:
         url: "{{ zabbix_api_url }}"
         method: POST
@@ -77,36 +104,62 @@
           params:
             output: ["templateid","host"]
             filter:
-              host: "{{ extra_tpl_names }}"
+              host: "{{ _extra_tpl_names }}"
           auth: "{{ zabbix_api_token }}"
           id: 1
         validate_certs: false
       delegate_to: localhost
-      register: extra_template_lookup
-      when: extra_tpl_names | length > 0
+      register: zbx_extra_tpl_lookup
+      when: _extra_tpl_names | length > 0
 
-    - name: Warn if some extra template names weren’t found
-      debug:
-        msg: >-
-          Extra template names requested: {{ extra_tpl_names }};
-          found: {{ extra_template_lookup.json.result | map(attribute='host') | list }};
-          missing: {{
-            extra_tpl_names | difference(extra_template_lookup.json.result | map(attribute='host') | list)
-          }}
-      when:
-        - extra_tpl_names | length > 0
-
-    - name: Build extra template objects for Zabbix
+    - name: Build full template id set (primary + extras)
       set_fact:
-        extra_template_objs: >-
+        _template_ids_full: >-
+          {%- set ids = [ (template_id|string) ] -%}
+          {%- if (zbx_extra_tpl_lookup is defined) and (zbx_extra_tpl_lookup.json.result is defined) -%}
+            {%- for t in zbx_extra_tpl_lookup.json.result -%}
+              {%- if t.templateid is defined -%}
+                {%- set _ = ids.append(t.templateid|string) -%}
+              {%- endif -%}
+            {%- endfor -%}
+          {%- endif -%}
+          {{ ids | unique }}
+
+    # Use `_template_ids_full` wherever we previously used just `[{'templateid': template_id}]`
+
+    # Example for CREATE:
+    - name: Build Zabbix host create params
+      set_fact:
+        zabbix_create_params: >-
           {{
-            (extra_template_lookup.json.result | default([]))
-            | map(attribute='templateid')
-            | map('string') | list
-            | map('regex_replace','^(.*)$','{"templateid": "\\1"}')
-            | map('from_yaml') | list
+            {
+              "host": inventory_hostname,
+              "name": visible_name,
+              "interfaces": interface_config | from_yaml,
+              "groups": [ { "groupid": (effective_groupid | int) } ],
+              "templates": (_template_ids_full | map('regex_replace','^(.*)$','{\"templateid\": \"\\1\"}') | map('from_json') ) ,
+              "tags": zabbix_tags
+            }
+            | combine( proxy_field | default({}) )
           }}
-      when: extra_tpl_names | length > 0
+      when: zabbix_host_check.json.result | length == 0
+
+    # Example for UPDATE:
+    - name: Build Zabbix host update params (REPLACE groups)
+      set_fact:
+        zabbix_update_params: >-
+          {{
+            {
+              "hostid": zabbix_host_check.json.result[0].hostid,
+              "name": visible_name,
+              "status": (zabbix_host_status | int),
+              "groups": [ { "groupid": (effective_groupid | int) } ],
+              "templates": (_template_ids_full | map('regex_replace','^(.*)$','{\"templateid\": \"\\1\"}') | map('from_json') ) ,
+              "tags": zabbix_tags
+            }
+            | combine( proxy_field | default({}) )
+          }}
+      when: (zabbix_host_check.json.result | length) > 0
 
     # --- Group selection (authoritative from CF) ---
     - name: Compute desired group id from NetBox CF (int; fallback to 5 if CF missing)
