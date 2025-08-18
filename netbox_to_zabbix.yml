@@ -151,10 +151,12 @@
       set_fact:
         host_exists: >-
           {{
-            (zabbix_host_check is defined)
-            and (zabbix_host_check.json is defined)
-            and (zabbix_host_check.json.result is defined)
-            and ((zabbix_host_check.json.result | length | int) > 0)
+            (
+              zabbix_host_check is defined
+              and zabbix_host_check.json is defined
+              and zabbix_host_check.json.result is defined
+              and (zabbix_host_check.json.result | length > 0)
+            ) | bool
           }}
         host_missing: "{{ not host_exists }}"
 
