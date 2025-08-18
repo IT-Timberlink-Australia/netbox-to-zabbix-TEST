@@ -51,7 +51,6 @@
       set_fact:
         template_id: "{{ zabbix_template_lookup.json.result[0].templateid }}"
 
-    # --- NORMALIZE extra_zabbix_templates TO A CLEAN NAME LIST ---
     - name: Normalize extra_zabbix_templates into a list of names
       set_fact:
         _raw_extra_tpls: "{{ extra_zabbix_templates | default([]) }}"
@@ -81,8 +80,6 @@
             {%- endfor -%}
           {%- endif -%}
           {{ out }}
-      vars:
-        extra_zabbix_templates: "{{ extra_zabbix_templates | default([]) }}"
       changed_when: false
 
     - name: Debug normalized extra template names (once)
@@ -125,41 +122,40 @@
           {%- endif -%}
           {{ ids | unique }}
 
-    # Use `_template_ids_full` wherever we previously used just `[{'templateid': template_id}]`
-
-    # Example for CREATE:
     - name: Build Zabbix host create params
       set_fact:
         zabbix_create_params: >-
           {{
             {
-              "host": inventory_hostname,
-              "name": visible_name,
-              "interfaces": interface_config | from_yaml,
-              "groups": [ { "groupid": (effective_groupid | int) } ],
-              "templates": (_template_ids_full | map('regex_replace','^(.*)$','{\"templateid\": \"\\1\"}') | map('from_json') ) ,
-              "tags": zabbix_tags
-            }
-            | combine( proxy_field | default({}) )
+              'host': inventory_hostname,
+              'name': visible_name,
+              'status': (zabbix_host_status | int),
+              'interfaces': interface_list,
+              'groups': [ { 'groupid': (effective_groupid | int) } ],
+              'templates': (_template_ids_full
+                            | map('regex_replace','^(.*)$','{"templateid": "\\1"}')
+                            | map('from_yaml') | list),
+              'tags': zabbix_tags
+            } | combine(proxy_field | default({}))
           }}
       when: zabbix_host_check.json.result | length == 0
 
-    # Example for UPDATE:
-    - name: Build Zabbix host update params (REPLACE groups)
+    - name: Build Zabbix host update params (REPLACE groups; MERGE templates set you computed)
       set_fact:
         zabbix_update_params: >-
           {{
             {
-              "hostid": zabbix_host_check.json.result[0].hostid,
-              "name": visible_name,
-              "status": (zabbix_host_status | int),
-              "groups": [ { "groupid": (effective_groupid | int) } ],
-              "templates": (_template_ids_full | map('regex_replace','^(.*)$','{\"templateid\": \"\\1\"}') | map('from_json') ) ,
-              "tags": zabbix_tags
-            }
-            | combine( proxy_field | default({}) )
+              'hostid': zabbix_host_check.json.result[0].hostid,
+              'name': visible_name,
+              'status': (zabbix_host_status | int),
+              'groups': [ { 'groupid': (effective_groupid | int) } ],
+              'templates': (_template_ids_full
+                            | map('regex_replace','^(.*)$','{"templateid": "\\1"}')
+                            | map('from_yaml') | list),
+              'tags': zabbix_tags
+            } | combine(proxy_field | default({}))
           }}
-      when: (zabbix_host_check.json.result | length) > 0
+      when: zabbix_host_check.json.result | length > 0
 
     # --- Group selection (authoritative from CF) ---
     - name: Compute desired group id from NetBox CF (int; fallback to 5 if CF missing)
