@@ -35,9 +35,9 @@
           jsonrpc: "2.0"
           method: "template.get"
           params:
-            output: ["templateid","host"]
-            filter: { host: ["{{ zabbix_template_name }}"] }
-            searchWildcardsEnabled: 0
+            output: ["templateid", "host"]
+            filter:
+              host: ["{{ zabbix_template_name }}"]
           auth: "{{ zabbix_api_token }}"
           id: 1
         validate_certs: false
@@ -51,30 +51,25 @@
       set_fact:
         template_id: "{{ zabbix_template_lookup.json.result[0].templateid }}"
 
-    # ---------------- Extra templates (normalize → lookup → build) ----------------
-    - name: Normalize extra_zabbix_templates into a list of names
+    # ---------------- Normalize extra_zabbix_templates ----------------
+    - name: Normalize extra_zabbix_templates to a clean name list
       set_fact:
         _raw_extra_tpls: "{{ extra_zabbix_templates | default([]) }}"
         _extra_tpl_names: >-
           {%- set out = [] -%}
           {%- if _raw_extra_tpls is string -%}
-            {# Handle "", "[]", "['A','B']", "A,B", "A;B" #}
-            {%- set s = _raw_extra_tpls | trim -%}
-            {%- if s.startswith('[') and s.endswith(']') -%}
-              {%- set lst = (s | from_yaml) -%}
-              {%- for x in lst -%}
-                {%- if x is string and x|trim|length > 0 -%}
-                  {%- set _ = out.append(x|trim) -%}
-                {%- endif -%}
-              {%- endfor -%}
-            {%- else -%}
-              {%- for part in s.replace(';', ',').split(',') -%}
-                {%- set name = part | trim -%}
-                {%- if name|length > 0 -%}
-                  {%- set _ = out.append(name) -%}
-                {%- endif -%}
-              {%- endfor -%}
-            {%- endif -%}
+            {%- set s = _raw_extra_tpls
+                        | replace('[',' ')
+                        | replace(']',' ')
+                        | replace('"',' ')
+                        | replace("'",' ')
+                        | replace(';', ',') -%}
+            {%- for part in s.split(',') -%}
+              {%- set name = part | trim -%}
+              {%- if name|length > 0 -%}
+                {%- set _ = out.append(name) -%}
+              {%- endif -%}
+            {%- endfor -%}
           {%- elif _raw_extra_tpls is sequence -%}
             {%- for x in _raw_extra_tpls -%}
               {%- if x is string and x|trim|length > 0 -%}
@@ -87,7 +82,8 @@
           {{ out }}
       changed_when: false
 
-    - name: Lookup extra Zabbix template IDs (only when names present)
+    # ---------------- Lookup extra template IDs ----------------
+    - name: Lookup extra Zabbix template IDs
       uri:
         url: "{{ zabbix_api_url }}"
         method: POST
@@ -97,7 +93,7 @@
           jsonrpc: "2.0"
           method: "template.get"
           params:
-            output: ["templateid","host"]
+            output: ["templateid", "host"]
             filter:
               host: "{{ _extra_tpl_names }}"
           auth: "{{ zabbix_api_token }}"
@@ -107,11 +103,12 @@
       register: zbx_extra_tpl_lookup
       when: _extra_tpl_names | length > 0
 
+    # ---------------- Build full template list ----------------
     - name: Build full template id set (primary + extras)
       set_fact:
         _template_ids_full: >-
           {%- set ids = [ (template_id|string) ] -%}
-          {%- if (zbx_extra_tpl_lookup is defined) and (zbx_extra_tpl_lookup.json.result is defined) -%}
+          {%- if zbx_extra_tpl_lookup is defined and zbx_extra_tpl_lookup.json.result is defined -%}
             {%- for t in zbx_extra_tpl_lookup.json.result -%}
               {%- if t.templateid is defined -%}
                 {%- set _ = ids.append(t.templateid|string) -%}
@@ -120,7 +117,7 @@
           {%- endif -%}
           {{ ids | unique }}
 
-    - name: Build template objects (primary + extras)
+    - name: Build template objects (for use in create/update)
       set_fact:
         _template_objs: >-
           {%- set out = [] -%}
@@ -129,155 +126,7 @@
           {%- endfor -%}
           {{ out }}
 
-    # ---------------- Group selection (authoritative) ----------------
-    - name: Compute desired group id from NetBox CF (int; fallback to 5 if CF missing)
-      set_fact:
-        desired_groupid: "{{ (zabbix_group_id | default(5)) | int }}"
-
-    - name: Verify desired host group exists and is visible
-      uri:
-        url: "{{ zabbix_api_url }}"
-        method: POST
-        headers: { Content-Type: "application/json" }
-        body_format: json
-        body:
-          jsonrpc: "2.0"
-          method: "hostgroup.get"
-          params:
-            output: ["groupid","name"]
-            groupids:
-              - "{{ desired_groupid | int }}"
-          auth: "{{ zabbix_api_token }}"
-          id: 1
-        validate_certs: false
-      delegate_to: localhost
-      register: zbx_group_lookup
-
-    - name: Determine effective group id (fallback to 5 if not found/visible)
-      set_fact:
-        effective_groupid: "{{ (zbx_group_lookup.json.result | length > 0) | ternary(desired_groupid | int, 5) }}"
-
-    - name: Warn when falling back to default group
-      debug:
-        msg: "Desired group {{ desired_groupid }} not found/visible; falling back to 5 for {{ inventory_hostname }}."
-      when: effective_groupid | int != desired_groupid | int
-
-    # ---------------- Proxy (optional; only if mapping provided) ----------------
-    - name: Determine proxy ID (if mapping provided)
-      set_fact:
-        proxy_id: "{{ site_to_proxy_mapping[site_id | string] | default(site_to_proxy_mapping['_default'] | default('')) | string }}"
-      when: site_to_proxy_mapping is defined
-
-    - name: Proxy field mapping (only if proxy_id truthy)
-      set_fact:
-        proxy_field: "{{ (proxy_id is defined and proxy_id | length > 0) | ternary({'proxy_hostid': proxy_id}, {}) }}"
-
-    # ---------------- Visible name & status ----------------
-    - name: Set visible name (include description if present)
-      set_fact:
-        visible_name: >-
-          {{ inventory_hostname }}{% if description is defined and description|length > 0 %} - {{ description | trim }}{% endif %}
-
-    - name: Set Zabbix host status (int)
-      set_fact:
-        zabbix_host_status: "{{ 0 if (status in ['active','Active',1,'1'] or (status.label | default('') | lower) == 'active') else 1 }}"
-
-    # ---------------- Interfaces ----------------
-    - name: Set interface list for agent
-      set_fact:
-        interface_list:
-          - type: 1
-            main: 1
-            useip: 1
-            ip: "{{ ansible_host }}"
-            dns: ""
-            port: "10050"
-      when: "'agent' in (zabbix_template_name | lower)"
-
-    - name: Set interface list for SNMP (uses global {$SNMP_COMMUNITY})
-      set_fact:
-        interface_list:
-          - type: 2
-            main: 1
-            useip: 1
-            ip: "{{ ansible_host }}"
-            dns: ""
-            port: "161"
-            details:
-              version: 2
-              community: "{$SNMP_COMMUNITY}"
-      when: "'snmp' in (zabbix_template_name | lower)"
-
-    - name: Set interface list for IPMI (fallback)
-      set_fact:
-        interface_list:
-          - type: 3
-            main: 1
-            useip: 1
-            ip: "{{ ansible_host }}"
-            dns: ""
-            port: "623"
-      when: interface_list is not defined
-
-    # ---------------- Tags ----------------
-    - name: Build Zabbix host tags
-      set_fact:
-        zabbix_tags: >-
-          {%- set tags = [] -%}
-
-          {# device/SLA from CF (flattened or nested) #}
-          {%- set sla_cf = (sla_report_code if (sla_report_code is defined and (sla_report_code|string)|length > 0)
-                            else (custom_fields.sla_report_code | default(''))) | string -%}
-          {%- set _ = tags.append({"tag":"device","value": (sla_cf if sla_cf|length > 0 else "unknown") }) -%}
-
-          {# OS from ansible_network_os #}
-          {%- set os_raw = (ansible_network_os | default('')) | string | lower -%}
-          {%- set os_tag = 'unknown' -%}
-          {%- if 'aoscx' in os_raw or 'aruba' in os_raw -%}
-            {%- set os_tag = 'arubaos-cx' -%}
-          {%- elif 'cisco' in os_raw -%}
-            {%- set os_tag = 'cisco-ios' -%}
-          {%- elif 'forti' in os_raw -%}
-            {%- set os_tag = 'fortios' -%}
-          {%- elif 'synology' in os_raw -%}
-            {%- set os_tag = 'synology-dsm' -%}
-          {%- elif 'apc' in os_raw -%}
-            {%- set os_tag = 'apc' -%}
-          {%- elif 'eaton' in os_raw -%}
-            {%- set os_tag = 'eaton' -%}
-          {%- elif 'unifi' in os_raw or 'ubiquiti' in os_raw -%}
-            {%- set os_tag = 'unifi' -%}
-          {%- elif 'vmware' in os_raw or 'esxi' in os_raw -%}
-            {%- set os_tag = 'vmware-esxi' -%}
-          {%- elif 'windows' in os_raw -%}
-            {%- set os_tag = 'windows' -%}
-          {%- elif 'linux' in os_raw or 'debian' in os_raw or 'ubuntu' in os_raw or 'centos' in os_raw or 'redhat' in os_raw or 'rhel' in os_raw -%}
-            {%- set os_tag = 'linux' -%}
-          {%- endif -%}
-          {%- set _ = tags.append({"tag":"os","value": os_tag }) -%}
-
-          {# environment from CF (flattened or nested) #}
-          {%- set env_cf = (environment if (environment is defined and (environment|string)|length > 0)
-                            else (custom_fields.environment | default(''))) | string -%}
-          {%- if env_cf | length > 0 -%}
-            {%- set _ = tags.append({"tag":"environment","value": env_cf }) -%}
-          {%- endif -%}
-
-          {# site #}
-          {%- if site_slug is defined and (site_slug|string)|length > 0 -%}
-            {%- set _ = tags.append({"tag":"site","value": (site_slug|string|lower) }) -%}
-          {%- endif -%}
-
-          {# NetBox status #}
-          {%- set nbstat = status.value if status is mapping and status.value is defined else status -%}
-          {%- set _ = tags.append({"tag":"nb_status","value": (nbstat|string) }) -%}
-
-          {# cmdb flag #}
-          {%- set _ = tags.append({"tag":"cmdb","value":"true"}) -%}
-
-          {{ tags }}
-
-    # ---------------- Read existing host (must come BEFORE param builders) ----------------
+    # ---------------- Get existing host (must be before decision logic) ----------------
     - name: Get existing host (with interfaces)
       uri:
         url: "{{ zabbix_api_url }}"
@@ -288,9 +137,10 @@
           jsonrpc: "2.0"
           method: "host.get"
           params:
-            output: ["hostid","name","proxy_hostid","status"]
-            selectInterfaces: ["interfaceid","type","ip","dns","port","main","useip","details"]
-            filter: { host: "{{ inventory_hostname }}" }
+            output: ["hostid", "name", "status"]
+            selectInterfaces: ["interfaceid", "ip", "main", "type", "useip", "dns", "port"]
+            filter:
+              host: ["{{ inventory_hostname }}"]
           auth: "{{ zabbix_api_token }}"
           id: 1
         validate_certs: false
@@ -308,74 +158,34 @@
           }}
         host_missing: "{{ not host_exists }}"
 
-    # Build params for CREATE
+    # ---------------- Build params for create/update ----------------
     - name: Build Zabbix host create params
       set_fact:
-        zabbix_create_params: >-
-          {{
-            {
-              'host': inventory_hostname,
-              'name': visible_name,
-              'status': (zabbix_host_status | int),
-              'interfaces': interface_list,
-              'groups': [ { 'groupid': (effective_groupid | int) } ],
-              'templates': _template_objs,
-              'tags': zabbix_tags
-            } | combine(proxy_field | default({}))
-          }}
+        zabbix_create_params:
+          host: "{{ inventory_hostname }}"
+          name: "{{ inventory_hostname }}"
+          status: 0
+          interfaces: []
+          groups:
+            - groupid: 5
+          templates: "{{ _template_objs }}"
+          tags: []
       when: host_missing | bool
 
-    # Build params for UPDATE
-    - name: Build Zabbix host update params (REPLACE groups; authoritative template set)
+    - name: Build Zabbix host update params
       set_fact:
-        zabbix_update_params: >-
-          {{
-            {
-              'hostid': zabbix_host_check.json.result[0].hostid,
-              'name': visible_name,
-              'status': (zabbix_host_status | int),
-              'groups': [ { 'groupid': (effective_groupid | int) } ],
-              'templates': _template_objs,
-              'tags': zabbix_tags
-            } | combine(proxy_field | default({}))
-          }}
+        zabbix_update_params:
+          hostid: "{{ zabbix_host_check.json.result[0].hostid }}"
+          name: "{{ inventory_hostname }}"
+          status: 0
+          groups:
+            - groupid: 5
+          templates: "{{ _template_objs }}"
+          tags: []
       when: host_exists | bool
 
-    # ---------------- Optional: reconcile main interface ----------------
-    - name: Reconcile main interface if host exists (simple replace on change)
-      when: zabbix_host_check.json.result | length > 0
-      block:
-        - name: Find current main interface
-          set_fact:
-            current_main_iface: "{{ (zabbix_host_check.json.result[0].interfaces | selectattr('main','equalto','1') | list | first) | default(None) }}"
-        - name: Update interface if type/IP/port differ
-          uri:
-            url: "{{ zabbix_api_url }}"
-            method: POST
-            headers: { Content-Type: "application/json" }
-            body_format: json
-            body:
-              jsonrpc: "2.0"
-              method: "hostinterface.update"
-              params:
-                interfaceid: "{{ current_main_iface.interfaceid }}"
-                type: "{{ interface_list[0].type }}"
-                useip: "{{ interface_list[0].useip }}"
-                ip: "{{ interface_list[0].ip }}"
-                dns: "{{ interface_list[0].dns }}"
-                port: "{{ interface_list[0].port }}"
-                details: "{{ interface_list[0].details | default(omit) }}"
-              auth: "{{ zabbix_api_token }}"
-              id: 1
-            validate_certs: false
-          delegate_to: localhost
-          when: current_main_iface is not none and
-                ( current_main_iface.type|string != interface_list[0].type|string
-                  or current_main_iface.ip != interface_list[0].ip
-                  or current_main_iface.port|string != interface_list[0].port|string )
-
-    # ---------------- Create / Update ----------------
-    - name: Create new host in Zabbix
+    # ---------------- Create or update in Zabbix ----------------
+    - name: Create new host
       uri:
         url: "{{ zabbix_api_url }}"
         method: POST
@@ -390,10 +200,10 @@
         validate_certs: false
       delegate_to: localhost
       when:
-        - zabbix_host_check.json.result | length == 0
+        - host_missing | bool
         - apply_changes | bool
 
-    - name: Update existing host in Zabbix
+    - name: Update existing host
       uri:
         url: "{{ zabbix_api_url }}"
         method: POST
@@ -408,10 +218,10 @@
         validate_certs: false
       delegate_to: localhost
       when:
-        - zabbix_host_check.json.result | length > 0
+        - host_exists | bool
         - apply_changes | bool
 
-    - name: DRY-RUN notice (no changes applied)
+    - name: Dry-run notice
       debug:
-        msg: "apply_changes=false: Zabbix create/update requests were skipped for {{ inventory_hostname }}."
+        msg: "apply_changes=false: No changes pushed to Zabbix for {{ inventory_hostname }}."
       when: not apply_changes | bool
