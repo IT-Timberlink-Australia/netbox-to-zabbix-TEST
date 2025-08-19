@@ -32,4 +32,4 @@ query_filters:
 group_by:
   - sites
   - device_roles
-  - ansible_network_os
+  - platform
