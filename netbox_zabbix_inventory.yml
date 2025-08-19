@@ -18,12 +18,10 @@ compose:
   environment: "custom_fields.environment | default('')"
 
 device_query_filters:
-  - "cf_zabbix_status=true"
+  - cf_zabbix_status: true
 
 vm_query_filters:
-  - "cf_zabbix_status=true"
+  - cf_zabbix_status: true
 
 group_by:
   - sites
-  - device_roles
-  - platforms
