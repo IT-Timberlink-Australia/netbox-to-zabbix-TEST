@@ -13,9 +13,9 @@ compose:
   device_role: "device_role.name"
   tags: "tags | map(attribute='name') | list"
   description: "description"
-  extra_zabbix_templates: >
-    {%- set v = custom_fields.extra_zabbix_templates | default([]) -%}
-    {{ (v if v is sequence else (v|string).split(',')) | map('trim') | reject('equalto','') | list }}
+  sla_report_code: "custom_fields.sla_report_code | default('')"
+  zabbix_template: "custom_fields.zabbix_template_name | default('')"
+  environment: "custom_fields.envirnoment | default('')"
 
 query_filters:
   - status: active
@@ -30,4 +30,3 @@ group_by:
   - sites
   - device_roles
   - platforms
-  - tags
