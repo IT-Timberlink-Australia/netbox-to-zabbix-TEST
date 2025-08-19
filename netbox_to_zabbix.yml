@@ -95,6 +95,10 @@
         msg: "Desired group {{ desired_groupid }} not found/visible; falling back to 5 for {{ inventory_hostname }}."
       when: effective_groupid | int != desired_groupid | int
 
+    - name: Show resolved group ID
+      debug:
+        msg: "Host {{ inventory_hostname }} assigned to group ID {{ desired_groupid }}"
+
     # ---------------- Proxy (optional; only if mapping provided) ----------------
     - name: Determine proxy ID (if mapping provided)
       set_fact:
