@@ -18,18 +18,11 @@ compose:
   environment: "custom_fields.environment | default('')"
 
 query_filters:
-  - status: active
-  - cf_mon_required: 'true'
-  - has_primary_ip: 'true'
-  - platform_id__isnull: 'false'
-  - cf_zabbix_template_name__isnull: 'false'
-  - cf_zabbix_template_name__empty: 'false'
-  - cf_sla_report_code__isnull: 'false'
-  - cf_sla_report_code__empty: 'false'
-  - cf_environment__isnull: 'false'
-  - cf_environment__empty: 'false'
+  - status__in: active,staged
+  - has_primary_ip: true
+  - cf_mon_required: true
 
 group_by:
   - sites
   - device_roles
-  - platform
+  - platforms
