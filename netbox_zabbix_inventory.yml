@@ -21,7 +21,8 @@ query_filters:
   - status__in: active,staged
   - has_primary_ip: true
   - cf_mon_required: true
-
+  - platform_id__isnull: false
+  
 group_by:
   - sites
   - device_roles
