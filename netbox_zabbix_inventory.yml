@@ -18,10 +18,10 @@ compose:
   environment: "custom_fields.environment | default('')"
 
 device_query_filters:
-  - "status=active&has_primary_ip=true&cf_mon_required=true&platform_id__isnull=false&cf_zabbix_template_name__isnull=false&cf_zabbix_template_name__empty=false&cf_sla_report_code__isnull=false&cf_sla_report_code__empty=false&cf_environment__isnull=false&cf_environment__empty=false"
+  - "cf_zabbix_status=true"
 
 vm_query_filters:
-  - "status=active&has_primary_ip=true&cf_mon_required=true&platform_id__isnull=false&cf_zabbix_template_name__isnull=false&cf_zabbix_template_name__empty=false&cf_sla_report_code__isnull=false&cf_sla_report_code__empty=false&cf_environment__isnull=false&cf_environment__empty=false"
+  - "cf_zabbix_status=true"
 
 group_by:
   - sites
