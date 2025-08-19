@@ -4,7 +4,7 @@ config_context: true
 flatten_custom_fields: true
 
 compose:
-  ansible_network_os: "platform.slug | default(platform.name, true) | default('unknown') | lower"
+  ansible_network_os: "platform.slug | default(platform.name, true) | default('') | lower"
   ansible_host: "primary_ip.address.split('/')[0] | default('0.0.0.0')"
   site_id: "site.id"
   site_slug: "site.slug"
@@ -21,15 +21,14 @@ query_filters:
   - status: active
   - has_primary_ip: true
   - cf_mon_required: true
-  - platform_id__isnull: false
+  - platform__isnull: false
   
 vm_query_filters:
   - status: active
   - has_primary_ip: true
   - cf_mon_required: true
-  - platform_id__isnull: false 
+  - platform__isnull: false 
 
 group_by:
   - sites
-  - device_roles
-  - platforms
+
