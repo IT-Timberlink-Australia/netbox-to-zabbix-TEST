@@ -21,13 +21,13 @@ query_filters:
   - status: active
   - has_primary_ip: true
   - cf_mon_required: true
-  - platform_id__isnull: 'false'
+  - platform_id__isnull: false
   
 vm_query_filters:
   - status: active
   - has_primary_ip: true
   - cf_mon_required: true
-  - platform_id__isnull: 'false'  
+  - platform_id__isnull: false 
 
 group_by:
   - sites
