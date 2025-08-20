@@ -193,11 +193,29 @@
           {%- endif -%}
           {%- set _ = tags.append({"tag":"os","value": os_tag }) -%}
 
-          {# Environment from CF (flattened or nested) #}
-          {%- set env_cf = (environment if (environment is defined and (environment|string)|length > 0)
-                            else (custom_fields.environment | default(''))) | string -%}
-          {%- if env_cf | length > 0 -%}
-            {%- set _ = tags.append({"tag":"environment","value": env_cf }) -%}
+          {# --- environment from CF (string, list, or mapping) --- #}
+          {%- set env_raw = (environment if environment is defined else (custom_fields.environment | default([]))) -%}
+          {%- set env_parts = [] -%}
+          {%- if env_raw is sequence and env_raw is not string -%}
+            {%- for item in env_raw -%}
+              {%- if item is mapping -%}
+                {%- set s = (item.label | default(item.value | default(item.name | default('')))) | string -%}
+              {%- else -%}
+                {%- set s = (item | string) -%}
+              {%- endif -%}
+              {%- set s = s | trim -%}
+              {%- if s|length > 0 -%}{%- set _ = env_parts.append(s) -%}{%- endif -%}
+            {%- endfor -%}
+          {%- elif env_raw is mapping -%}
+            {%- set s = (env_raw.label | default(env_raw.value | default(env_raw.name | default('')))) | string -%}
+            {%- set s = s | trim -%}
+            {%- if s|length > 0 -%}{%- set _ = env_parts.append(s) -%}{%- endif -%}
+          {%- else -%}
+            {%- set s = (env_raw | string) | trim -%}
+            {%- if s|length > 0 -%}{%- set _ = env_parts.append(s) -%}{%- endif -%}
+          {%- endif -%}
+          {%- if env_parts | length > 0 -%}
+            {%- set _ = tags.append({'tag':'environment','value': env_parts | join(',') }) -%}
           {%- endif -%}
 
           {# site tag #}
