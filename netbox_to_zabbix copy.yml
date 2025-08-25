@@ -226,12 +226,13 @@
 
           {{ tags }}
 
-      debug:
-          msg:
-            host: "{{ inventory_hostname }}"
-            env_raw: "{{ _env_raw }}"
-            env_value: "{{ _env_value }}"
-          when: _env_value is defined
+    - name: Debug Environment
+    - debug:
+        msg:
+          host: "{{ inventory_hostname }}"
+          env_raw: "{{ _env_raw }}"
+          env_value: "{{ _env_value }}"
+      when: _env_value is defined
 
     # ---------------- Read existing host ----------------
     - name: Get existing host (with interfaces)
