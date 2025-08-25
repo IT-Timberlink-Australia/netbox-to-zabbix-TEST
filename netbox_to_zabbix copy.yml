@@ -226,6 +226,13 @@
 
           {{ tags }}
 
+      debug:
+          msg:
+            host: "{{ inventory_hostname }}"
+            env_raw: "{{ _env_raw }}"
+            env_value: "{{ _env_value }}"
+          when: _env_value is defined
+
     # ---------------- Read existing host ----------------
     - name: Get existing host (with interfaces)
       uri:
@@ -369,10 +376,3 @@
       debug:
         msg: "apply_changes=false: Zabbix create/update requests were skipped for {{ inventory_hostname }}."
       when: not apply_changes | bool
-
-    - debug:
-        msg:
-          host: "{{ inventory_hostname }}"
-          env_raw: "{{ _env_raw }}"
-          env_value: "{{ _env_value }}"
-      when: _env_value is defined
